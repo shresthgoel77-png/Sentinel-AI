@@ -3,6 +3,8 @@ import json
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import redis
+import time 
 
 #This handles client requests for redis
 from graph import app_graph, r 
