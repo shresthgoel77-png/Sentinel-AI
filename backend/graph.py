@@ -11,6 +11,7 @@ from langgraph.graph import StateGraph, END
 # Upstash Cloud Redis connection URI
 REDIS_URL = "rediss://default:gQAAAAAAAhOUAAIgcDE3OWExNmMwM2YwY2Q0MDEyYjhjMDllY2I1ZWJiOTEyYw@normal-dory-136084.upstash.io:6379"
 
+
 try:
     r = redis.from_url(REDIS_URL, decode_responses=True)
     r.ping()
