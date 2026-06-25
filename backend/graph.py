@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph, END
 # REDIS SETUP
 # ==========================================
 # Paste your copied Upstash URL here:
-REDIS_URL = "redis://default:gQAAAAAAAhOUAAIgcDE3OWExNmMwM2YwY2Q0MDEyYjhjMDllY2I1ZWJiOTEyYw@normal-dory-136084.upstash.io:6379"
+REDIS_URL = "rediss://default:gQAAAAAAAhOUAAIgcDE3OWExNmMwM2YwY2Q0MDEyYjhjMDllY2I1ZWJiOTEyYw@normal-dory-136084.upstash.io:6379"
 
 # We use try/except so your server doesn't crash if the URL is wrong
 try:
