@@ -4,6 +4,7 @@ from typing import Dict, Any
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END
 
+#This is the setup done using the Sentinel ai database
 # ==========================================
 # REDIS SETUP
 # ==========================================
