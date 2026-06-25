@@ -4,7 +4,7 @@ from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Import our graph and the Redis client
+#This handles client requests for redis
 from graph import app_graph, r 
 
 app = FastAPI(title="AI Shield Backend")
