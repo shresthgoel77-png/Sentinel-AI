@@ -92,5 +92,6 @@ workflow.add_edge("scanner", "classifier")  # Then go here
 workflow.add_edge("classifier", "responder")# Then go here
 workflow.add_edge("responder", END)         # Finish!
 
+#This folder contains the langgraphs
 # 4. Compile the graph so it's ready to execute
 app_graph = workflow.compile()
