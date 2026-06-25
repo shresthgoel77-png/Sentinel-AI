@@ -1,55 +1,75 @@
+import json
+import redis
 from typing import Dict, Any
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END
 
 # ==========================================
-# STEP 2a: Define the State (The Clipboard)
+# REDIS SETUP
 # ==========================================
-# This structure defines exactly what data our agents can read and write.
-class ThreatState(TypedDict):
-    prompt: str          # The original text from the user
-    scan_type: str       # Determined by Planner: "deep_scan" or "standard"
-    findings: str        # Written by Scanner: Details of what was found
-    threat_level: str    # Written by Classifier: "Low", "Medium", or "High"
-    confidence: int      # Written by Classifier: 0 to 100 percentage
-    final_action: str    # Written by Responder: "ALLOW", "REDACT", or "BLOCK"
+# Paste your copied Upstash URL here:
+REDIS_URL = "redis://default:gQAAAAAAAhOUAAIgcDE3OWExNmMwM2YwY2Q0MDEyYjhjMDllY2I1ZWJiOTEyYw@normal-dory-136084.upstash.io:6379"
+
+# We use try/except so your server doesn't crash if the URL is wrong
+try:
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    r.ping()
+    print("✅ Connected to Redis successfully!")
+except Exception as e:
+    print(f"⚠️ Redis connection failed: {e}")
+    r = None
+
+def update_status(task_id: str, step: str, message: str, is_complete: bool = False, final_data: dict = None):
+    """Helper function to write real-time updates to the Redis whiteboard."""
+    print(f"[{step}] {message}")
+    if r and task_id:
+        status_payload = {
+            "step": step,
+            "message": message,
+            "is_complete": is_complete,
+            "final_data": final_data or {}
+        }
+        # Save to Redis for 1 hour (3600 seconds)
+        r.setex(f"status:{task_id}", 3600, json.dumps(status_payload))
 
 # ==========================================
-# STEP 2b: Define the 4 Agents (The Nodes)
+# PIPELINE SETUP
 # ==========================================
+class ThreatState(TypedDict):
+    task_id: str         # NEW: We need to know which task we are updating
+    prompt: str
+    scan_type: str
+    findings: str
+    threat_level: str
+    confidence: int
+    final_action: str
 
 def planner_agent(state: ThreatState) -> Dict[str, Any]:
-    print("--- PLANNER AGENT RUNNING ---")
+    task_id = state.get("task_id", "")
+    update_status(task_id, "Planner", "Routing prompt to correct scanner...")
+    
     text = state["prompt"]
-    
-    # Simple logic for now: if the prompt is long, do a deep scan
     scan_type = "deep_scan" if len(text) > 50 else "standard"
-    
-    # We return the updates we want to make to the clipboard
     return {"scan_type": scan_type}
 
-
 def scanner_agent(state: ThreatState) -> Dict[str, Any]:
-    print("--- SCANNER AGENT RUNNING ---")
-    text = state["prompt"]
-    scan_mode = state["scan_type"]
+    task_id = state.get("task_id", "")
+    update_status(task_id, "Scanner", "Analyzing text for malicious intent...")
     
-    # Simple logic looking for typical malicious keywords
+    text = state["prompt"]
     if "api key" in text.lower() or "password" in text.lower():
         findings = "Potential credential exposure or PII request found."
     elif "ignore previous instructions" in text.lower():
         findings = "Potential jailbreak prompt injection attempt detected."
     else:
         findings = "No immediate anomalies flagged in basic text scan."
-        
     return {"findings": findings}
 
-
 def classifier_agent(state: ThreatState) -> Dict[str, Any]:
-    print("--- CLASSIFIER AGENT RUNNING ---")
-    findings = state["findings"]
+    task_id = state.get("task_id", "")
+    update_status(task_id, "Classifier", "Calculating threat confidence level...")
     
-    # Assign threat levels based on the scanner's findings
+    findings = state["findings"]
     if "jailbreak" in findings:
         return {"threat_level": "High", "confidence": 95}
     elif "PII" in findings or "credential" in findings:
@@ -57,12 +77,11 @@ def classifier_agent(state: ThreatState) -> Dict[str, Any]:
     else:
         return {"threat_level": "Low", "confidence": 99}
 
-
 def responder_agent(state: ThreatState) -> Dict[str, Any]:
-    print("--- RESPONDER AGENT RUNNING ---")
-    threat = state["threat_level"]
+    task_id = state.get("task_id", "")
+    update_status(task_id, "Responder", "Finalizing security protocol...")
     
-    # Make the final security decision
+    threat = state["threat_level"]
     if threat == "High":
         action = "BLOCK"
     elif threat == "Medium":
@@ -70,28 +89,26 @@ def responder_agent(state: ThreatState) -> Dict[str, Any]:
     else:
         action = "ALLOW"
         
+    # This is the final step, so we package the final data for the frontend!
+    final_data = {
+        "threat_level": threat,
+        "confidence": state.get("confidence"),
+        "final_action": action
+    }
+    update_status(task_id, "Complete", "Analysis finished.", is_complete=True, final_data=final_data)
+        
     return {"final_action": action}
 
-# ==========================================
-# STEP 2c: Connect the Pipeline (The Graph)
-# ==========================================
-
-# 1. Initialize the graph with our custom State structure
+# Compile Graph
 workflow = StateGraph(ThreatState)
-
-# 2. Add our 4 agents as nodes in the graph
 workflow.add_node("planner", planner_agent)
 workflow.add_node("scanner", scanner_agent)
 workflow.add_node("classifier", classifier_agent)
 workflow.add_node("responder", responder_agent)
 
-# 3. Define the sequential flow (Edges)
-workflow.set_entry_point("planner")       # Start here
-workflow.add_edge("planner", "scanner")     # Then go here
-workflow.add_edge("scanner", "classifier")  # Then go here
-workflow.add_edge("classifier", "responder")# Then go here
-workflow.add_edge("responder", END)         # Finish!
-
-#This folder contains the langgraphs
-# 4. Compile the graph so it's ready to execute
+workflow.set_entry_point("planner")
+workflow.add_edge("planner", "scanner")
+workflow.add_edge("scanner", "classifier")
+workflow.add_edge("classifier", "responder")
+workflow.add_edge("responder", END)
 app_graph = workflow.compile()
