@@ -1,4 +1,4 @@
-export type Verdict = 'safe' | 'threat'
+export type Verdict = 'safe' | 'threat';
 
 export interface MatchHit {
   /** Human readable label for the pattern that matched, e.g. "API Key" */
@@ -20,9 +20,9 @@ export interface DataLeakScan extends ScanResult {
 }
 
 export interface ShieldStats {
-  dataLeaksBlocked: number
-  jailbreaksDetected: number
-  safeRequests: number
+  threatsBlocked: number;
+  safeRequests: number;
+  totalScans: number;
 }
 
 export type SamplePromptKind = 'safe' | 'risky'
@@ -31,3 +31,6 @@ export interface SamplePrompt {
   kind: SamplePromptKind
   text: string
 }
+
+
+

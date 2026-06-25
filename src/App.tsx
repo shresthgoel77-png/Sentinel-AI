@@ -1,49 +1,42 @@
 import { useState, useCallback } from 'react'
 import StatusBar from './components/StatusBar'
 import Hero from './components/Hero'
-import DataLeakDemo from './components/DataLeakDemo'
-import JailbreakDemo from './components/JailbreakDemo'
+import CoreAnalyzer from './components/CoreAnalyzer' // The new God Component
 import CombinedDashboard from './components/CombinedDashboard'
-import AttackSimulation from './components/AttackSimulation'
 import Architecture from './components/Architecture'
 import JudgesSection from './components/JudgesSection'
 import Footer from './components/Footer'
 import type { ShieldStats, Verdict } from './lib/types'
 
 const INITIAL_STATS: ShieldStats = {
-  dataLeaksBlocked: 0,
-  jailbreaksDetected: 0,
+  threatsBlocked: 0,
   safeRequests: 0,
+  totalScans: 0
 }
 
 export default function App() {
   const [stats, setStats] = useState<ShieldStats>(INITIAL_STATS)
 
-  const handleDataLeakResult = useCallback((verdict: Verdict) => {
+  // Single handler for all prompt scans coming from the real Python backend
+  const handleScanResult = useCallback((verdict: Verdict) => {
     setStats((prev) => ({
       ...prev,
-      dataLeaksBlocked: prev.dataLeaksBlocked + (verdict === 'threat' ? 1 : 0),
+      threatsBlocked: prev.threatsBlocked + (verdict === 'threat' ? 1 : 0),
       safeRequests: prev.safeRequests + (verdict === 'safe' ? 1 : 0),
-    }))
-  }, [])
-
-  const handleJailbreakResult = useCallback((verdict: Verdict) => {
-    setStats((prev) => ({
-      ...prev,
-      jailbreaksDetected: prev.jailbreaksDetected + (verdict === 'threat' ? 1 : 0),
-      safeRequests: prev.safeRequests + (verdict === 'safe' ? 1 : 0),
+      totalScans: prev.totalScans + 1
     }))
   }, [])
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex flex-col">
       <StatusBar stats={stats} />
-      <main>
+      <main className="flex-grow">
         <Hero />
-        <DataLeakDemo onResult={handleDataLeakResult} />
-        <JailbreakDemo onResult={handleJailbreakResult} />
+        
+        {/* The single point of entry for analyzing prompts */}
+        <CoreAnalyzer onResult={handleScanResult} />
+        
         <CombinedDashboard stats={stats} />
-        <AttackSimulation />
         <Architecture />
         <JudgesSection />
       </main>

@@ -6,3 +6,18 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 npm-debug.log*
+
+# ==========================================
+# PYTHON BACKEND ADDITIONS
+# ==========================================
+# Ignore the environment variable files containing secrets
+.env
+backend/.env
+
+# Ignore the Python virtual environment folder
+backend/venv/
+venv/
+
+# Ignore Python cache files
+**/__pycache__/
+*.pyc
