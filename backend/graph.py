@@ -45,7 +45,7 @@ class SecurityAnalysis(BaseModel):
     confidence: int = Field(description="Risk score from 0 to 100 based on severity.")
 
 # Initialize Gemini 1.5 Flash (Free, fast, and supports structured output)
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0).with_structured_output(SecurityAnalysis)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0).with_structured_output(SecurityAnalysis)
 
 # The core instruction set for the AI
 system_prompt = """You are Sentinel, an enterprise AI security firewall. 
