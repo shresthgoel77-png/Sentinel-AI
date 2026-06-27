@@ -7,7 +7,7 @@ from schemas import DocumentExtractionPayload
 from graph import update_status 
 # NOTE: Assuming you have a compiled graph named `sentinel_graph` in graph.py. 
 # e.g., sentinel_graph = builder.compile()
-from graph import sentinel_graph 
+from graph import app
 
 logger = logging.getLogger("sentinel.gateway")
 
@@ -34,11 +34,10 @@ class LangGraphEngineHandoff:
             
             # 3. Trigger your graph (run in an executor if your graph is synchronous)
             # If your graph.py uses async nodes, use sentinel_graph.ainvoke()
-            result = await asyncio.to_thread(sentinel_graph.invoke, initial_state)
-            
+            result = await asyncio.to_thread(app.invoke, initial_state)
             # 4. Final success update
             update_status(
-                task_id=task_id_str, 
+                task_id=task_id_str,
                 step="complete", 
                 message="Scanning complete.",
                 is_complete=True,

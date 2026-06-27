@@ -6,6 +6,9 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 npm-debug.log*
+projectarch.md
+projectprompt.md
+todo.md
 
 # ==========================================
 # PYTHON BACKEND ADDITIONS
