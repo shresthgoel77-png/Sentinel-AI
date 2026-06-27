@@ -5,7 +5,7 @@ from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, s
 
 from schemas import TaskInitializationResponse, SourceFileMetadata, DocumentExtractionPayload
 from extractor import SecureDocumentExtractor
-from redis_client import RedisStateManager
+from redis_client import RedisManager
 from langgraph_engine import LangGraphEngineHandoff
 
 # Set up clean system logging
@@ -13,13 +13,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel.gateway")
 
 # Setup Lifespan state management for clean resource handling
-redis_manager: RedisStateManager = None
+redis_manager: RedisManager = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global redis_manager
     logger.info("Initializing Sentinel Gateway State Layers...")
-    redis_manager = RedisStateManager()
+    redis_manager = RedisManager()
     yield
     logger.info("Tearing down Sentinel Gateway State Layers...")
     await redis_manager.close()

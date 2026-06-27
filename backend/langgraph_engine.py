@@ -1,13 +1,12 @@
 # backend/langgraph_engine.py
 import logging
 import asyncio
+from sanitizer import DocumentSanitizer
 from schemas import DocumentExtractionPayload
 
-# Import the status updater and the compiled graph from YOUR existing graph.py
+# Import the status updater and the compiled graph from your existing graph.py
 from graph import update_status 
-# NOTE: Assuming you have a compiled graph named `sentinel_graph` in graph.py. 
-# e.g., sentinel_graph = builder.compile()
-from graph import app
+from graph import app_graph  # <-- FIXED: Using your actual compiled graph name!
 
 logger = logging.getLogger("sentinel.gateway")
 
@@ -22,19 +21,31 @@ class LangGraphEngineHandoff:
             update_status(
                 task_id=task_id_str, 
                 step="scanning", 
-                message="LangGraph engine initialized. Scanning for prompt injection..."
+                message="LangGraph engine initialized. Scanning document for prompt injection..."
             )
             
-            # 2. Prepare the state for your LangGraph
+            # --- NEW SANITIZATION STEP ---
+            # 2a. Run the raw text through the Phase 2 Sanitizer
+            clean_text, sanitizer_flags = DocumentSanitizer.process(payload.extracted_plaintext)
+            
+            # Combine the original flags with our new sanitizer flags
+            payload.security_flags.update(sanitizer_flags)
+            
+            # 2b. Prepare the state EXACTLY how your ThreatState TypedDict expects it.
+            combined_content = (
+                f"--- VISIBLE TEXT ---\n{clean_text}\n\n"
+                f"--- HIDDEN METADATA/FLAGS ---\n{payload.metadata_payload}\n"
+                f"System Flags: {payload.security_flags}"
+            )   
+            
             initial_state = {
-                "document_text": payload.extracted_plaintext,
-                "metadata_payload": payload.metadata_payload,
-                "security_flags": payload.security_flags,
+                "task_id": task_id_str,
+                "prompt": combined_content
             }
             
-            # 3. Trigger your graph (run in an executor if your graph is synchronous)
-            # If your graph.py uses async nodes, use sentinel_graph.ainvoke()
-            result = await asyncio.to_thread(app.invoke, initial_state)
+            # 3. Trigger your graph using the correct variable
+            result = await asyncio.to_thread(app_graph.invoke, initial_state) 
+            
             # 4. Final success update
             update_status(
                 task_id=task_id_str,
