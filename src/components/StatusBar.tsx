@@ -14,7 +14,7 @@ export default function StatusBar({ stats }: StatusBarProps) {
             SENTINEL CORE ONLINE
           </span>
         </div>
-
+        
         <div className="flex gap-8 font-mono text-sm hidden md:flex">
           <div className="flex flex-col items-end">
             <span className="text-slate-500 text-xs uppercase tracking-wider">Total Scans</span>

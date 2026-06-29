@@ -6,6 +6,7 @@ interface TerminalMonitorProps {
   verdict: ScanVerdict | null;
 }
 
+
 export const TerminalMonitor: React.FC<TerminalMonitorProps> = ({ logs, verdict }) => {
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
