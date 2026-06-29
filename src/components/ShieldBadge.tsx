@@ -13,7 +13,6 @@ export default function ShieldBadge({
 }: ShieldBadgeProps) {
   const isSafe = verdict === 'safe'
 
-  
   return (
     <div
       className={`inline-flex items-center gap-2.5 rounded-full border px-4 py-2 font-display text-sm font-medium ${
