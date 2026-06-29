@@ -15,6 +15,7 @@ class RedisManager:
             "rediss://default:gQAAAAAAAhOUAAIgcDE3OWExNmMwM2YwY2Q0MDEyYjhjMDllY2I1ZWJiOTEyYw@normal-dory-136084.upstash.io:6379"
         )
         
+        
         if not redis_url:
             print("WARNING: REDIS_URL not found in .env")
             redis_url = "" 
