@@ -110,6 +110,7 @@ class DocumentSanitizer:
             except (ValueError, UnicodeDecodeError):
                 pass
 
+
         # 3. URL Encoding Detection (Looks for heavily % encoded strings)
         url_pattern = re.compile(r'(?:%[0-9a-fA-F]{2}){10,}')
         for match in url_pattern.findall(text):

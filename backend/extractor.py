@@ -118,7 +118,6 @@ class SecureDocumentExtractor:
         
         return plaintext, "\n".join(metadata_payload_chunks), security_flags
 
-
     @staticmethod
     def _parse_markdown(md_content: str) -> Tuple[str, str, Dict[str, Any]]:
         security_flags = {"front_matter_extracted": False}
