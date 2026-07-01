@@ -24,3 +24,4 @@ export default function RiskMeter({ label, score, tone }: RiskMeterProps) {
     </div>
   )
 }
+
