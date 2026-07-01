@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from state import ThreatState
 from explainer import explain_security_verdict  
 
-
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
