@@ -2,19 +2,20 @@ import os
 import json
 import redis
 import time
+import logging
 from typing import Dict, Any, List 
 from typing_extensions import TypedDict
 from dotenv import load_dotenv
-from state import ThreatState
-from explainer import explain_security_verdict  
 
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-# Import the new explainer node (assuming you saved it in explainer.py as discussed)
-from explainer import explain_security_verdict
+# Import the schema you added to schemas.py
+from schemas import SecurityExplanationOutput
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables (API Keys)
 load_dotenv()
@@ -203,6 +204,63 @@ def run_heuristic_scanner_node(state: ThreatState):
     print("Executing Phase 2: Heuristic Scanner...")
     return state
 
+# --- NEW: EXPLAINER NODE MOVED HERE ---
+def explain_security_verdict(state: ThreatState) -> Dict[str, Any]:
+    """
+    LangGraph node that reformats upstream security analysis into a 
+    strict JSON structure for frontend ingestion without altering the verdict.
+    """
+    raw_text = state.get("document_text", "") # Using document_text to match your state keys
+    verdict = state.get("semantic_verdict", {})
+    
+    fallback_payload = {
+        "summary": "Analysis complete, awaiting manual review.",
+        "flagged_sections": []
+    }
+
+    try:
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.0, max_retries=2)
+        structured_llm = llm.with_structured_output(SecurityExplanationOutput)
+
+        system_instructions = (
+            "You are an AI Security Explainer for a RAG document security pipeline.\n"
+            "The document has already been analyzed by upstream systems. Do NOT perform a new analysis, "
+            "and do NOT change the verdict under any circumstances.\n\n"
+            "CRITICAL RULES:\n"
+            "1. Generate a maximum 15-word summary explaining why the document is unsafe.\n"
+            "2. Flag exact sections from the Raw Document that contributed to the verdict. Do not modify, "
+            "summarize, fix typos, or rewrite the flagged text.\n"
+            "3. Provide a maximum 8-word reason for each flagged section.\n"
+            "4. Only use evidence explicitly provided in the Upstream Analysis. Do not invent new issues.\n"
+            "5. If the Upstream Analysis indicates the document is safe, you MUST return an empty "
+            "flagged_sections list and set the summary to exactly: 'No unsafe content detected.'\n"
+        )
+
+        user_prompt = f"""
+        [Upstream Analysis Verdict]
+        {json.dumps(verdict, indent=2)}
+        
+        [Raw Document Text]
+        {raw_text}
+        """
+
+        result: SecurityExplanationOutput = structured_llm.invoke([
+            ("system", system_instructions),
+            ("user", user_prompt)
+        ])
+
+        final_payload = result.model_dump()
+        
+    except Exception as e:
+        logger.error(f"Error in explain_security_verdict node: {str(e)}", exc_info=True)
+        final_payload = fallback_payload
+
+    # Update redis status one last time for frontend display
+    task_id = state.get("task_id", "")
+    update_status(task_id, "Complete", "Explanation generated.", is_complete=True, extra_data={"explanation": final_payload})
+
+    return {"final_explanation": final_payload}
+
 # ==========================================
 # COMPILING THE LANGGRAPH
 # ==========================================
@@ -213,7 +271,7 @@ workflow.add_node("heuristic_scanner", run_heuristic_scanner_node)
 workflow.add_node("scanner", semantic_document_scanner)              
 workflow.add_node("quarantine", quarantine_document)                  
 workflow.add_node("authorize", authorize_ingestion)                   
-workflow.add_node("explain_security_verdict", explain_security_verdict) # <-- New node added
+workflow.add_node("explain_security_verdict", explain_security_verdict) 
 
 # 2. Define the starting point
 workflow.set_entry_point("heuristic_scanner")
