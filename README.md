@@ -14,6 +14,16 @@ Sentinel is designed to become the runtime security layer for enterprise AI appl
 
 ---
 
+## 🚀 Tech Stack
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=ts,react,js,python,redis" />
+</p>
+
+<p align="center">
+  <strong>AI Stack:</strong> LangChain • LangGraph • RAG Pipeline
+</p>
+
 # Core Capabilities
 
 ### Runtime AI Security
