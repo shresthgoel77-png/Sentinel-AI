@@ -2,14 +2,20 @@ import os
 import json
 import redis
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List 
 from typing_extensions import TypedDict
 from dotenv import load_dotenv
+from state import ThreatState
+from explainer import explain_security_verdict  
+
 
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
+
+# Import the new explainer node (assuming you saved it in explainer.py as discussed)
+from explainer import explain_security_verdict
 
 # Load environment variables (API Keys)
 load_dotenv()
@@ -33,12 +39,11 @@ def update_status(task_id: str, step: str, message: str, is_complete: bool = Fal
         status_payload = {"step": step, "message": message, "is_complete": is_complete}
         if extra_data:
             status_payload.update(extra_data)
-        r.setex(f"status:{task_id}", 3600, json.dumps(status_payload))
+            r.setex(f"status:{task_id}", 3600, json.dumps(status_payload))
 
 # ==========================================
 # AI BRAIN SETUP (LANGCHAIN + GEMINI)
 # ==========================================
-# We force the LLM to reply exactly in this format using Pydantic
 class SecurityAnalysis(BaseModel):
     findings: str = Field(description="A 1-2 sentence explanation of the security risks found, or state it is safe.")
     threat_level: str = Field(description="Must be strictly 'low', 'medium', or 'high'.")
@@ -112,22 +117,21 @@ class ThreatState(TypedDict, total=False):
     heuristic_flags: dict    
     semantic_verdict: dict   
     quarantine_status: str   
+    
+    raw_text: str
+    findings: List[Dict[str, Any]]  # Array of findings from upstream analysis
+    
+    # New state key for the frontend payload
+    final_explanation: Dict[str, Any]   
 
 # ==========================================
 # 4. NODE FUNCTIONS
 # ==========================================
 def planner_agent(state: ThreatState) -> Dict[str, Any]:
     task_id = state.get("task_id", "")
-    # Note: Ensure update_status is imported or defined elsewhere in your file
-    # update_status(task_id, "Planner", "[SYSTEM] Extracting packet metadata & routing payload...")
-    
     return {"scan_type": "deep_llm_scan"}
 
 def scanner_agent(state: ThreatState) -> Dict[str, Any]:
-    task_id = state.get("task_id", "")
-    # update_status(task_id, "Scanner", "[AGENT] Running deep semantic Gemini analysis...")
-    
-    # 🧠 Evaluates the standard prompt
     analysis_result: SecurityAnalysis = ai_brain.invoke({"user_input": state.get("prompt", "")})
     
     return {
@@ -164,7 +168,7 @@ def quarantine_document(state: ThreatState) -> Dict[str, Any]:
     verdict = state.get("semantic_verdict", {})
     
     message = f"🚨 THREAT DETECTED: {verdict.get('justification')}"
-    update_status(task_id, "Quarantine", message, is_complete=True, extra_data={"verdict": verdict})
+    update_status(task_id, "Quarantine", message, is_complete=False, extra_data={"verdict": verdict})
     
     return {"quarantine_status": "QUARANTINED"}
 
@@ -173,45 +177,20 @@ def authorize_ingestion(state: ThreatState) -> Dict[str, Any]:
     verdict = state.get("semantic_verdict", {})
     
     message = "✅ Document cleared. Safe for Vector Database ingestion."
-    update_status(task_id, "Authorized", message, is_complete=True, extra_data={"verdict": verdict})
+    update_status(task_id, "Authorized", message, is_complete=False, extra_data={"verdict": verdict})
     
     return {"quarantine_status": "CLEAN"}
 
 def classifier_agent(state: ThreatState) -> Dict[str, Any]:
-    task_id = state.get("task_id", "")
-    update_status(task_id, "Classifier", "[AGENT] Weighing Gemini confidence intervals...")
-    time.sleep(0.5) # Slight delay for UI aesthetics
-    
-    # The classification is already done by Gemini, we just pass it through
-    return {"threat_level": state["threat_level"], "confidence": state["confidence"]}
+    time.sleep(0.5)
+    return {"threat_level": state.get("threat_level", "low"), "confidence": state.get("confidence", 0)}
 
 def responder_agent(state: ThreatState) -> Dict[str, Any]:
-    task_id = state.get("task_id", "")
-    update_status(task_id, "Responder", "[SYSTEM] Compiling core firewall response protocol...")
-    
-    threat = state["threat_level"]
-    if threat == "high":
-        action = "block"
-    elif threat == "medium":
-        action = "redact"
-    else:
-        action = "allow"
-        
-    final_payload = {
-        "threat_level": threat,
-        "confidence": state.get("confidence", 0),
-        "final_action": action,
-        "findings": state.get("findings", "")
-    }
-    
-    update_status(task_id, "Complete", "[SYSTEM] Pipeline executed. Connection finalized.", is_complete=True, extra_data=final_payload)
-        
+    threat = state.get("threat_level", "low")
+    action = "block" if threat == "high" else "redact" if threat == "medium" else "allow"
     return {"final_action": action}
 
 def route_based_on_risk(state: ThreatState) -> str:
-    """
-    Evaluates the state and routes to either quarantine or authorization.
-    """
     verdict = state.get("semantic_verdict", {})
     risk_score = verdict.get("risk_score", 0)
     high_risk_found = verdict.get("high_risk_instructions_found", False)
@@ -221,9 +200,7 @@ def route_based_on_risk(state: ThreatState) -> str:
     
     return "authorize"
 
-# Temporary wrapper for the Phase 2 Node
-def run_heuristic_scanner_node(state):
-    # TODO: We will wire this up to DocumentSanitizer.process() later
+def run_heuristic_scanner_node(state: ThreatState):
     print("Executing Phase 2: Heuristic Scanner...")
     return state
 
@@ -232,21 +209,17 @@ def run_heuristic_scanner_node(state):
 # ==========================================
 workflow = StateGraph(ThreatState)
 
-# 1. Add ALL Nodes (Old and New)
-# Change this line:
-# workflow.add_node("heuristic_scanner", your_existing_phase2_function)
-
-# To this:
+# 1. Add ALL Nodes
 workflow.add_node("heuristic_scanner", run_heuristic_scanner_node)
-workflow.add_node("scanner", semantic_document_scanner)               # New Phase 3
-workflow.add_node("quarantine", quarantine_document)                  # New Phase 3
-workflow.add_node("authorize", authorize_ingestion)                   # New Phase 3
+workflow.add_node("scanner", semantic_document_scanner)              
+workflow.add_node("quarantine", quarantine_document)                  
+workflow.add_node("authorize", authorize_ingestion)                   
+workflow.add_node("explain_security_verdict", explain_security_verdict) # <-- New node added
 
 # 2. Define the starting point
 workflow.set_entry_point("heuristic_scanner")
 
-# 3. Connect Phase 2 to Phase 3
-# Once heuristics are done, immediately run the semantic scanner
+# 3. Connect sequential parts
 workflow.add_edge("heuristic_scanner", "scanner")
 
 # 4. Add Conditional Routing (The Brain)
@@ -259,8 +232,11 @@ workflow.add_conditional_edges(
     }
 )
 
-# 5. Terminate the graph based on the router's decision
-workflow.add_edge("quarantine", END)
-workflow.add_edge("authorize", END)
+# 5. Route the final status nodes to the Explainer
+workflow.add_edge("quarantine", "explain_security_verdict")
+workflow.add_edge("authorize", "explain_security_verdict")
+
+# 6. Terminate the graph after formatting for the frontend
+workflow.add_edge("explain_security_verdict", END)
 
 app_graph = workflow.compile()
