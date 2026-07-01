@@ -4,6 +4,7 @@ interface RiskMeterProps {
   tone: 'safe' | 'danger'
 }
 
+
 export default function RiskMeter({ label, score, tone }: RiskMeterProps) {
   return (
     <div>
@@ -24,4 +25,3 @@ export default function RiskMeter({ label, score, tone }: RiskMeterProps) {
     </div>
   )
 }
-
