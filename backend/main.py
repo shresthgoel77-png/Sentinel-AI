@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+import json
 import logging
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,7 +37,10 @@ app = FastAPI(title="Sentinel AI - Pre-Ingestion Node Gateway", version="1.0.0",
 # =====================================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this in production to match your React origin
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -194,40 +198,178 @@ async def analyze_document(
 # =====================================================================
 # NEW PHASE 4 INTERACTIVE ROUTES (React Dark Terminal UI Extensions)
 # =====================================================================
+class PromptAnalysisRequest(BaseModel):
+    text: str
+
+@app.post(
+    "/api/analyze-prompt",
+    response_model=TaskInitializationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Direct ingestion channel for raw text prompt scanning."
+)
+async def analyze_prompt(
+    request: PromptAnalysisRequest,
+    background_tasks: BackgroundTasks
+):
+    try:
+        task_id = uuid.uuid4()
+        
+        source_metadata = SourceFileMetadata(
+            filename="raw_prompt.txt",
+            content_type="text/plain",
+            file_size_bytes=len(request.text)
+        )
+        
+        # Initialize in Redis
+        await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+        
+        extraction_payload = DocumentExtractionPayload(
+            task_id=task_id,
+            source_metadata=source_metadata,
+            extracted_plaintext=request.text,
+            metadata_payload="",
+            security_flags={}
+        )
+        
+        # Hand off to LangGraph background worker
+        background_tasks.add_task(LangGraphEngineHandoff.invoke_security_graph, extraction_payload)
+        
+        return TaskInitializationResponse(task_id=task_id)
+        
+    except Exception as e:
+        logger.error(f"Prompt ingestion initialization failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prompt scanning failed: {str(e)}")
+
 @app.post(
     "/api/scan",
     summary="Direct ingestion channel for the real-time dark terminal visualization console."
 )
 async def initial_file_ingestion(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     try:
+        filename = file.filename
+        content_type = file.content_type
         file_bytes = await file.read()
-        task_id = str(uuid.uuid4())
+        file_size = len(file_bytes)
         
-        # Instantiate localized initial task record matrix
-        tasks_db[task_id] = {
-            "status": "processing",
-            "stage": "PARSER",
-            "message": f"[SYSTEM] Ingesting: {file.filename} validation sequence bound.",
-            "isolated_injection_phrases": [],
-            "risk_score": 0
-        }
+        if file_size == 0:
+            raise HTTPException(status_code=400, detail="Cannot parse an empty document file stream.")
+            
+        source_metadata = SourceFileMetadata(
+            filename=filename,
+            content_type=content_type,
+            file_size_bytes=file_size
+        )
         
-        # Offload pipeline compute logic to background worker thread
-        background_tasks.add_task(run_phase4_analysis_pipeline, task_id, file.filename, file_bytes)
+        # Extract content
+        plaintext, metadata_payload, security_flags = await SecureDocumentExtractor.extract(
+            file_bytes=file_bytes, 
+            filename=filename, 
+            content_type=content_type
+        )
+        
+        task_id = uuid.uuid4()
+        
+        # Initialize in Redis
+        await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+        
+        extraction_payload = DocumentExtractionPayload(
+            task_id=task_id,
+            source_metadata=source_metadata,
+            extracted_plaintext=plaintext,
+            metadata_payload=metadata_payload,
+            security_flags=security_flags
+        )
+        
+        # Hand off to LangGraph background worker
+        background_tasks.add_task(LangGraphEngineHandoff.invoke_security_graph, extraction_payload)
         
         return {"task_id": task_id}
         
     except Exception as e:
-        logger.error(f"Phase 4 ingestion initialization failed: {str(e)}")
+        logger.error(f"File ingestion scan initialization failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ingestion framework failed: {str(e)}")
 
 @app.get(
     "/api/status/{task_id}", 
-    response_model=ScanVerdict,
     summary="Real-time terminal polling stream engine endpoint."
 )
 async def get_pipeline_status(task_id: str):
-    if task_id not in tasks_db:
-        raise HTTPException(status_code=404, detail="Task signature lookup failed or expired.")
+    # 1. Check Redis first
+    if redis_manager and redis_manager.client:
+        try:
+            redis_data = await redis_manager.client.get(f"status:{task_id}")
+            if redis_data:
+                data = json.loads(redis_data)
+                is_complete = data.get("is_complete", False)
+                step = data.get("step", "")
+                message = data.get("message", "")
+                
+                result = data.get("result", {})
+                semantic_verdict = result.get("semantic_verdict", {})
+                
+                # Extract risk_score and other metrics
+                risk_score = semantic_verdict.get("risk_score") or result.get("confidence") or 0
+                quarantine_status = result.get("quarantine_status", "")
+                
+                # Determine UI status value
+                if is_complete:
+                    status_val = "malicious" if quarantine_status == "QUARANTINED" else "safe"
+                else:
+                    status_val = "processing"
+                
+                # Determine threat classification
+                if risk_score > 75:
+                    threat_level = "high"
+                    final_action = "block"
+                elif risk_score > 30:
+                    threat_level = "medium"
+                    final_action = "redact"
+                else:
+                    threat_level = "low"
+                    final_action = "allow"
+                
+                # Retrieve explanation
+                explanation = data.get("explanation", {})
+                findings = explanation.get("summary") or semantic_verdict.get("justification") or result.get("findings") or message
+                
+                isolated_injection_phrases = semantic_verdict.get("isolated_injection_phrases", [])
+                
+                return {
+                    "status": status_val,
+                    "stage": step.upper() if step else None,
+                    "message": message,
+                    "is_complete": is_complete,
+                    "risk_score": risk_score,
+                    "confidence": risk_score,
+                    "threat_level": threat_level,
+                    "final_action": final_action,
+                    "findings": findings,
+                    "isolated_injection_phrases": isolated_injection_phrases
+                }
+        except Exception as e:
+            logger.error(f"Failed to fetch status from Redis: {str(e)}")
+
+    # 2. Fall back to local tasks_db (simulated pipeline status)
+    if task_id in tasks_db:
+        task_data = tasks_db[task_id]
+        status_val = task_data.get("status", "processing")
+        is_complete = status_val in ["safe", "malicious"]
+        risk_score = task_data.get("risk_score", 0)
         
-    return tasks_db[task_id]
+        threat_level = "high" if status_val == "malicious" else "low"
+        final_action = "block" if status_val == "malicious" else "allow"
+        
+        return {
+            "status": status_val,
+            "stage": task_data.get("stage"),
+            "message": task_data.get("message"),
+            "is_complete": is_complete,
+            "risk_score": risk_score,
+            "confidence": risk_score,
+            "threat_level": threat_level,
+            "final_action": final_action,
+            "findings": task_data.get("message"),
+            "isolated_injection_phrases": task_data.get("isolated_injection_phrases", [])
+        }
+        
+    raise HTTPException(status_code=404, detail="Task signature lookup failed or expired.")

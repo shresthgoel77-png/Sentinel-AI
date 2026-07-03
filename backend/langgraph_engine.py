@@ -40,7 +40,9 @@ class LangGraphEngineHandoff:
             
             initial_state = {
                 "task_id": task_id_str,
-                "prompt": combined_content
+                "prompt": combined_content,
+                "document_text": clean_text,
+                "heuristic_flags": payload.security_flags
             }
             
             # 3. Trigger your graph using the correct variable

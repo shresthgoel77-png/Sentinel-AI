@@ -10,15 +10,10 @@ load_dotenv()
 class RedisManager:
     def __init__(self):
         # 1. Grab the URL from the environment
-        redis_url = os.getenv(
-            "REDIS_URL", 
-            "rediss://default:gQAAAAAAAhOUAAIgcDE3OWExNmMwM2YwY2Q0MDEyYjhjMDllY2I1ZWJiOTEyYw@normal-dory-136084.upstash.io:6379"
-        )
-        
+        redis_url = os.getenv("REDIS_URL")
         
         if not redis_url:
-            print("WARNING: REDIS_URL not found in .env")
-            redis_url = "" 
+            raise ValueError("REDIS_URL environment variable is missing. Please set it in your environment or .env file.")
 
         # 2. Create the async Redis client 
         # (Removed the explicit ssl=True because 'rediss://' handles it automatically)

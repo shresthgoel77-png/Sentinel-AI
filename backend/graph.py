@@ -23,14 +23,17 @@ load_dotenv()
 # ==========================================
 # REDIS SETUP
 # ==========================================
-REDIS_URL = "rediss://default:gQAAAAAAAhOUAAIgcDE3OWExNmMwM2YwY2Q0MDEyYjhjMDllY2I1ZWJiOTEyYw@normal-dory-136084.upstash.io:6379"
+REDIS_URL = os.getenv("REDIS_URL")
+
+if not REDIS_URL:
+    raise ValueError("REDIS_URL environment variable is missing. Please set it in your environment or .env file.")
 
 try:
     r = redis.from_url(REDIS_URL, decode_responses=True)
     r.ping()
-    print("✅ Connected to Upstash Redis successfully!")
+    print("[INFO] Connected to Upstash Redis successfully!")
 except Exception as e:
-    print(f"⚠️ Redis connection failed: {e}")
+    print(f"[WARNING] Redis connection failed: {e}")
     r = None
 
 def update_status(task_id: str, step: str, message: str, is_complete: bool = False, extra_data: dict = None):
@@ -39,7 +42,7 @@ def update_status(task_id: str, step: str, message: str, is_complete: bool = Fal
         status_payload = {"step": step, "message": message, "is_complete": is_complete}
         if extra_data:
             status_payload.update(extra_data)
-            r.setex(f"status:{task_id}", 3600, json.dumps(status_payload))
+        r.setex(f"status:{task_id}", 3600, json.dumps(status_payload))
 
 # ==========================================
 # AI BRAIN SETUP (LANGCHAIN + GEMINI)
