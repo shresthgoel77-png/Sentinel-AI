@@ -2,6 +2,7 @@
 
 **Sentinel AI** is a runtime security platform that protects enterprise AI applications by sitting between your app and any large language model (LLM). Rather than acting as a chatbot or simple prompt filter, Sentinel provides a model-agnostic layer for security, governance, observability, and policy enforcement.
 
+
 <p align="center">
   <img src="docs/images/hero-dashboard.png" alt="Sentinel AI dashboard — AI Shield protecting systems from data leaks and jailbreak attacks" width="900" />
 </p>
