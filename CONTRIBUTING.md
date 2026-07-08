@@ -2,6 +2,7 @@
 
 First off, thank you for considering contributing to Sentinel AI! It's people like you that make building secure, enterprise-grade AI applications possible. 
 
+
 Sentinel AI is an interactive AI runtime security platform, and we welcome contributions across the board—whether it's adding new threat detection rules, improving our LangGraph RAG pipeline, fixing UI bugs, or writing documentation.
 
 ## Table of Contents
