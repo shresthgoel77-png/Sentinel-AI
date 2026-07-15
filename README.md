@@ -27,6 +27,19 @@ As organizations rapidly adopt generative AI, traditional application security i
 Sentinel is designed to become the **runtime security layer** for enterprise AI applications — providing continuous inspection, threat detection, governance, and enforcement without requiring changes to the underlying model.
 
 ---
+## Tech Stack
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=ts,react,js,python,redis" />
+</p>
+
+| Layer | Technologies |
+|-------|-------------|
+| **Frontend** | React, TypeScript, Vite, Tailwind CSS |
+| **Backend** | Python, FastAPI, Redis |
+| **AI Stack** | LangChain, LangGraph, RAG Pipeline |
+
+---
 
 ## Features
 
@@ -103,20 +116,6 @@ This prevents poisoned knowledge bases before retrieval ever occurs.
 ### AI Observability
 
 Sentinel provides visibility into AI runtime behavior by tracking requests, security decisions, threat detections, policy violations, and runtime events — similar to how Datadog provides observability for cloud infrastructure.
-
----
-
-## Tech Stack
-
-<p align="center">
-  <img src="https://skillicons.dev/icons?i=ts,react,js,python,redis" />
-</p>
-
-| Layer | Technologies |
-|-------|-------------|
-| **Frontend** | React, TypeScript, Vite, Tailwind CSS |
-| **Backend** | Python, FastAPI, Redis |
-| **AI Stack** | LangChain, LangGraph, RAG Pipeline |
 
 ---
 
