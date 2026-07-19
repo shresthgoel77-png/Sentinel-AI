@@ -32,7 +32,6 @@ export default function Hero() {
           </span>
         </h1>
 
-
         <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-muted sm:text-lg">
           An interactive demonstration of how AI safety systems can detect confidential information
           leaks and malicious prompt attacks before they cause harm.
