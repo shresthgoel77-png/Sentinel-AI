@@ -44,7 +44,6 @@ export default function App() {
     setTimeout(fetchAnalytics, 1500); 
   }, [])
 
-  
   return (
     <div style={{ position: 'relative', width: '100%', minHeight: '100vh', overflow: 'hidden' }}>
       
