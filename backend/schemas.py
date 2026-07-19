@@ -8,6 +8,7 @@ class TaskInitializationResponse(BaseModel):
     task_id: UUID4 = Field(..., description="The unique identity tracking this document's safety analysis.")
     status: str = Field("PARSING_COMPLETE", description="Initial status written to the cache layer.")
 
+
 class SourceFileMetadata(BaseModel):
     filename: str
     content_type: str
@@ -96,4 +97,4 @@ class AuditLogResponse(AuditLogBase):
     timestamp: datetime
     
     class Config:
-        from_attributes = True
+        from_attributes = True
