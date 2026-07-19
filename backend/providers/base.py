@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
+#base provider 
 class BaseProvider(ABC):
     @abstractmethod
     async def generate_completion(self, request: Any, api_key: str) -> Dict[str, Any]:
