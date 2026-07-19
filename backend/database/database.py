@@ -1,13 +1,11 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+import os
 
-# Hardcoded to SQLite to prevent .env conflicts
-DATABASE_URL = "sqlite:///sentinel.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/dbname")
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
 
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()   
+Base = declarative_base()
