@@ -1,46 +1,78 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import StatusBar from './components/StatusBar'
 import Hero from './components/Hero'
-import CoreAnalyzer from './components/CoreAnalyzer' // The new God Component
+import LiveBackendDemo from './components/LiveBackendDemo'
+import CoreAnalyzer from './components/CoreAnalyzer'
 import CombinedDashboard from './components/CombinedDashboard'
 import Architecture from './components/Architecture'
 import JudgesSection from './components/JudgesSection'
 import Footer from './components/Footer'
-import type { ShieldStats, Verdict } from './lib/types'
-
-const INITIAL_STATS: ShieldStats = {
-  threatsBlocked: 0,
-  safeRequests: 0,
-  totalScans: 0
-}
+import DarkVeil from './components/DarkVeil'
 
 export default function App() {
-  const [stats, setStats] = useState<ShieldStats>(INITIAL_STATS)
+  const [stats, setStats] = useState<any>({
+    threatsBlocked: 0,
+    safeRequests: 0,
+    totalScans: 0,
+    averageRiskScore: 0,
+    averageLatencyMs: 0,
+    providerSplit: { openai: 0, anthropic: 0 },
+    totalTokens: 0
+  });
 
-  // Single handler for all prompt scans coming from the real Python backend
-  const handleScanResult = useCallback((verdict: Verdict) => {
-    setStats((prev) => ({
-      ...prev,
-      threatsBlocked: prev.threatsBlocked + (verdict === 'threat' ? 1 : 0),
-      safeRequests: prev.safeRequests + (verdict === 'safe' ? 1 : 0),
-      totalScans: prev.totalScans + 1
-    }))
+  // Pull global persistence logs
+  const fetchAnalytics = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/v1/analytics/dashboard');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.stats) setStats(data.stats);
+      }
+    } catch (e) {
+      console.error("Analytics fetch failed", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchAnalytics();
+    const interval = setInterval(fetchAnalytics, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Update immediately after a local scan
+  const handleScanResult = useCallback(() => {
+    setTimeout(fetchAnalytics, 1500); 
   }, [])
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <StatusBar stats={stats} />
-      <main className="flex-grow">
+    <div style={{ position: 'relative', width: '100%', minHeight: '100vh', overflow: 'hidden' }}>
+      
+      {/* Background layer */}
+      <div 
+        style={{ 
+          position: 'absolute', 
+          inset: 0, 
+          zIndex: -1, 
+          pointerEvents: 'none' 
+        }}
+      >
+        <DarkVeil />
+      </div>
+
+      {/* Existing application content */}
+      <main className="flex flex-col flex-grow" style={{ position: 'relative', zIndex: 1 }}>
+        <StatusBar stats={stats as any} />
         <Hero />
-        
+        <LiveBackendDemo onResult={handleScanResult} />
         {/* The single point of entry for analyzing prompts */}
         <CoreAnalyzer onResult={handleScanResult} />
-        
         <CombinedDashboard stats={stats} />
         <Architecture />
         <JudgesSection />
+        <div className="bg-background/80 backdrop-blur-sm">
+          <Footer />
+        </div>
       </main>
-      <Footer />
     </div>
   )
 }

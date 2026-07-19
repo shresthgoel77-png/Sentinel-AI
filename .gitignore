@@ -22,5 +22,12 @@ backend/venv/
 venv/
 
 # Ignore Python cache files
-**/__pycache__/
+__pycache__/
 *.pyc
+*.pyo
+
+# Ignore Database files
+*.db
+*.sqlite
+*.sqlite3
+sentinel.db

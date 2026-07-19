@@ -5,8 +5,22 @@ import logging
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
+from sqlalchemy.orm import Session
+
+from database.database import SessionLocal
+from database.models import APIKey
+from providers.openai import OpenAIProvider
+from providers.anthropic import AnthropicProvider
+from sanitizer import DocumentSanitizer
+from graph import app_graph
+from policy_engine import get_tenant_policy
+import time
+import re
+from database.models import AuditLog
+from sqlalchemy import func
 
 # Retain all of your structural project domain imports
 from schemas import TaskInitializationResponse, SourceFileMetadata, DocumentExtractionPayload
@@ -373,3 +387,225 @@ async def get_pipeline_status(task_id: str):
         }
         
     raise HTTPException(status_code=404, detail="Task signature lookup failed or expired.")
+
+# =====================================================================
+# PHASE 5: GATEWAY INTERCEPTION ROUTES (OpenAI SDK Compatible)
+# =====================================================================
+security = HTTPBearer()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security), db: Session = Depends(get_db)):
+    if not credentials.credentials.startswith("sk_sentinel_"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API Key format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # Check DB
+    api_key_record = db.query(APIKey).filter(APIKey.hashed_key == credentials.credentials).first()
+    if not api_key_record or not api_key_record.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or inactive API Key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return api_key_record
+
+def redact_sensitive_data(text: str) -> str:
+    if not text:
+        return text
+    text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[REDACTED_EMAIL]', text)
+    text = re.sub(r'(sk|pk)_[a-zA-Z0-9]{20,}', '[REDACTED_KEY]', text)
+    text = re.sub(r'AKIA[0-9A-Z]{16}', '[REDACTED_CREDENTIAL]', text)
+    return text
+
+def write_audit_log_background(
+    tenant_id: int, provider_name: str, model_name: str,
+    risk_score: float, threats_json: dict, latency: int, tokens: int
+):
+    db_session = SessionLocal()
+    try:
+        log_entry = AuditLog(
+            tenant_id=tenant_id,
+            provider=provider_name,
+            model=model_name,
+            risk_score=risk_score,
+            threats_triggered=threats_json,
+            latency_ms=latency,
+            tokens_used=tokens
+        )
+        db_session.add(log_entry)
+        db_session.commit()
+    except Exception as e:
+        logger.error(f"Audit log insertion failed: {e}")
+    finally:
+        db_session.close()
+
+class OpenAIMessage(BaseModel):
+    role: str
+    content: str
+    
+class OpenAIChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[OpenAIMessage]
+    temperature: Optional[float] = 1.0
+    top_p: Optional[float] = 1.0
+    n: Optional[int] = 1
+    stream: Optional[bool] = False
+    max_tokens: Optional[int] = None
+    presence_penalty: Optional[float] = 0.0
+    frequency_penalty: Optional[float] = 0.0
+
+@app.post(
+    "/v1/chat/completions",
+    summary="OpenAI-Compatible Gateway Interception Endpoint",
+    tags=["Gateway"]
+)
+async def chat_completions(
+    request: OpenAIChatCompletionRequest,
+    background_tasks: BackgroundTasks,
+    api_key: APIKey = Depends(verify_api_key),
+    db: Session = Depends(get_db)
+):
+    start_time = time.perf_counter()
+    policy = get_tenant_policy(db, api_key.tenant_id)
+    
+    # 1. Compile prompt text from the incoming messages
+    prompt_text = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
+    
+    # 2. Extract and Sanitize before LangGraph
+    clean_text, sanitizer_flags = DocumentSanitizer.process(prompt_text)
+    
+    combined_content = (
+        f"--- VISIBLE TEXT ---\n{clean_text}\n\n"
+        f"--- HIDDEN METADATA/FLAGS ---\n\n"
+        f"System Flags: {sanitizer_flags}"
+    )   
+    
+    task_id_str = f"gw-{uuid.uuid4()}"
+    
+    initial_state = {
+        "task_id": task_id_str,
+        "prompt": combined_content,
+        "document_text": clean_text,
+        "heuristic_flags": sanitizer_flags
+    }
+    
+    # 3. Synchronously await the execution of the existing LangGraph pipeline
+    import asyncio
+    graph_result = await asyncio.to_thread(app_graph.invoke, initial_state)
+    
+    verdict = graph_result.get("semantic_verdict", {})
+    risk_score = verdict.get("risk_score", 0)
+    threat_signals = {"high_risk_instructions_found": verdict.get("high_risk_instructions_found", False)}
+    
+    lat = int((time.perf_counter() - start_time) * 1000)
+    
+    risk_limit = policy.get("max_risk_score", 80)
+    
+    # 4. Enforce strict gateway threshold
+    if risk_score > risk_limit:
+        background_tasks.add_task(
+            write_audit_log_background, api_key.tenant_id, "BLOCKED", request.model, risk_score, threat_signals, lat, 0
+        )
+        return {
+            "error": {
+                "message": f"Sentinel AI Security Block: Prompt injection or high-risk content detected (Risk Score: {risk_score}).",
+                "type": "security_policy_violation",
+                "param": "prompt",
+                "code": "threat_detected"
+            },
+            "_sentinel_trace": {
+                "langgraph_risk": risk_score,
+                "latency_ms": lat,
+                "threat_signals": threat_signals
+            }
+        }
+        
+    # Route dynamically based on the model provided
+    provider_name = ""
+    if request.model.startswith("gpt") or request.model.startswith("o1"):
+        provider = OpenAIProvider()
+        provider_name = "OpenAI"
+    elif request.model.startswith("claude"):
+        provider = AnthropicProvider()
+        provider_name = "Anthropic"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported LLM provider for model: {request.model}")
+        
+    try:
+        response = await provider.generate_completion(request, api_key.hashed_key)
+        
+        # 5. Egress Scanning and Redaction
+        if policy.get("enable_masking", True):
+            for choice in response.get("choices", []):
+                if "message" in choice and "content" in choice["message"]:
+                    original_text = choice["message"]["content"]
+                    redacted_text = redact_sensitive_data(original_text)
+                    choice["message"]["content"] = redacted_text
+                
+        lat = int((time.perf_counter() - start_time) * 1000)
+        tokens = response.get("usage", {}).get("total_tokens", 0)
+        
+        # 6. Dispatch async Audit Logging tracking performance and cost mapping silently
+        background_tasks.add_task(
+            write_audit_log_background, api_key.tenant_id, provider_name, request.model, risk_score, threat_signals, lat, tokens
+        )
+        
+        if isinstance(response, dict):
+            response["_sentinel_trace"] = {
+                "langgraph_risk": risk_score,
+                "latency_ms": lat,
+                "threat_signals": threat_signals,
+                "tokens_used": tokens
+            }
+        
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Provider generation failed: {str(e)}")
+
+# =====================================================================
+# PHASE 6: OPERATIONAL INTELLIGENCE SUITE
+# ==========================================
+@app.get(
+    "/v1/analytics/dashboard",
+    summary="Global Analytics Dashboard Data",
+    tags=["Analytics"]
+)
+async def get_dashboard_analytics(db: Session = Depends(get_db)):
+    # 1. Total Scans
+    total_scans = db.query(func.count(AuditLog.id)).scalar() or 0
+    
+    # 2. Blocked vs Safe
+    threats_blocked = db.query(func.count(AuditLog.id)).filter(AuditLog.provider == "BLOCKED").scalar() or 0
+    safe_requests = total_scans - threats_blocked
+    
+    # 3. Aggregations
+    avg_risk = db.query(func.avg(AuditLog.risk_score)).scalar() or 0.0
+    avg_latency = db.query(func.avg(AuditLog.latency_ms)).scalar() or 0.0
+    total_tokens = db.query(func.sum(AuditLog.tokens_used)).scalar() or 0
+    
+    # 4. Provider Splits
+    openai_count = db.query(func.count(AuditLog.id)).filter(AuditLog.provider == "OpenAI").scalar() or 0
+    anthropic_count = db.query(func.count(AuditLog.id)).filter(AuditLog.provider == "Anthropic").scalar() or 0
+    
+    return {
+        "stats": {
+            "totalScans": total_scans,
+            "threatsBlocked": threats_blocked,
+            "safeRequests": safe_requests,
+            "averageRiskScore": round(avg_risk, 1),
+            "averageLatencyMs": round(avg_latency, 0),
+            "providerSplit": {
+                "openai": openai_count,
+                "anthropic": anthropic_count
+            },
+            "totalTokens": total_tokens
+        }
+    }

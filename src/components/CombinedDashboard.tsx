@@ -1,7 +1,7 @@
 import type { ShieldStats } from '../lib/types';
 
 interface CombinedDashboardProps {
-  stats: ShieldStats;
+  stats: any;
 }
 
 export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
@@ -38,6 +38,35 @@ export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
               <div className="text-4xl font-display font-bold text-violet-400">
                 {threatPercentage}%
               </div>
+            </div>
+          </div>
+          
+          {/* Avg Latency Metric */}
+          <div className="rounded-xl bg-void border border-edge p-6">
+            <div className="text-slate-500 font-mono text-sm mb-2">Avg Execution Latency</div>
+            <div className="flex items-baseline gap-2">
+              <div className="text-4xl font-display font-bold text-cyan">
+                {stats.averageLatencyMs || 0}
+              </div>
+              <span className="text-slate-500 font-mono text-sm">ms</span>
+            </div>
+          </div>
+          
+          {/* Global Risk Index */}
+          <div className="rounded-xl bg-void border border-edge p-6">
+            <div className="text-slate-500 font-mono text-sm mb-2">Global Risk Index</div>
+            <div className="flex items-baseline gap-2">
+              <div className="text-4xl font-display font-bold text-orange-400">
+                {stats.averageRiskScore || 0}
+              </div>
+            </div>
+          </div>
+          
+          {/* Total Tokens Protected */}
+          <div className="rounded-xl bg-void border border-edge p-6">
+            <div className="text-slate-500 font-mono text-sm mb-2">Tokens Processed</div>
+            <div className="text-4xl font-display font-bold text-emerald-400">
+              {stats.totalTokens || 0}
             </div>
           </div>
         </div>

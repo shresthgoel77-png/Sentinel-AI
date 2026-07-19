@@ -18,17 +18,53 @@ export default function DataLeakDemo({ onResult }: DataLeakDemoProps) {
   const [result, setResult] = useState<DataLeakScan | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
 
-  const runAnalysis = (text: string) => {
+  const runAnalysis = async (text: string) => {
     if (!text.trim()) return
     setAnalyzing(true)
     setResult(null)
-    // Small artificial delay so the "scanning" state reads as real analysis, not instant.
-    window.setTimeout(() => {
-      const scan = analyzeDataLeak(text)
+    
+    try {
+      const response = await fetch('http://localhost:8000/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer sk_sentinel_test_123'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: text }]
+        })
+      })
+      
+      const data = await response.json()
+      
+      const rawResponse = data.error ? data.error.message : (data.choices?.[0]?.message?.content || '')
+      const score = data._sentinel_trace?.langgraph_risk || 0
+      const verdict: Verdict = data.error ? 'threat' : 'safe'
+      
+      const hits: Array<{label: string, snippet: string}> = []
+      if (data._sentinel_trace?.threat_signals) {
+        Object.entries(data._sentinel_trace.threat_signals).forEach(([key, val]) => {
+          if (val) {
+            hits.push({ label: 'Threat', snippet: key })
+          }
+        })
+      }
+
+      const scan = {
+        verdict,
+        score,
+        hits,
+        rawResponse
+      }
+
       setResult(scan)
       setAnalyzing(false)
       onResult(scan.verdict)
-    }, 550)
+    } catch (error) {
+      console.error('FastAPI Gateway Error:', error)
+      setAnalyzing(false)
+    }
   }
 
   return (

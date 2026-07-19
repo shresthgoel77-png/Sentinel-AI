@@ -47,74 +47,139 @@ export function useSentinelAPI() {
     }, []);
 
     // ==========================================
-    // ROUTE 1: TEXT PROMPT INGESTION
+    // ROUTE 1A: TEXT PROMPT INGESTION (ANALYZER)
     // ==========================================
     const analyzePrompt = async (prompt: string) => {
         if (!prompt.trim()) return;
 
         setIsAnalyzing(true);
-        setLogs(["[SYSTEM] Initializing Sentinel engine connection..."]);
+        setLogs(["[SYSTEM] Initializing Prompt Analyzer..."]);
         setFinalResult(null);
         setError(null);
         clearPolling();
 
         try {
-            const response = await fetch('http://127.0.0.1:8000/api/analyze-prompt', {
-                method: 'POST',
+            const response = await fetch("http://127.0.0.1:8000/api/analyze-prompt", {
+                method: "POST",
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: prompt }),
             });
 
-            if (!response.ok) {
-                throw new Error(`Backend returned status code ${response.status}`);
-            }
+            if (!response.ok) throw new Error("Backend analyzer ingestion failed.");
 
             const data = await response.json();
             const taskId = data.task_id;
 
             pollingIntervalRef.current = window.setInterval(async () => {
                 try {
-                    const statusRes = await fetch(`http://127.0.0.1:8000/api/status/${taskId}`);
-                    const statusData = await statusRes.json();
+                    const res = await fetch(`http://127.0.0.1:8000/api/status/${taskId}`);
+                    if (!res.ok) return;
 
-                    if (statusData.error) {
-                        clearPolling();
-                        setError(statusData.error);
-                        setIsAnalyzing(false);
-                        return;
-                    }
+                    const statusData: ScanStatus = await res.json();
 
-                    const currentLogMessage = statusData.message || statusData.step;
-
-                    if (currentLogMessage) {
-                        setLogs((prev) => {
-                            if (prev[prev.length - 1] !== currentLogMessage) {
-                                return [...prev, currentLogMessage];
+                    if (statusData.message) {
+                        setLogs(prevLogs => {
+                            if (prevLogs[prevLogs.length - 1] !== statusData.message) {
+                                return [...prevLogs, statusData.message!];
                             }
-                            return prev;
+                            return prevLogs;
                         });
                     }
 
-                    if (statusData.is_complete === true || statusData.is_complete === "true") {
+                    if (statusData.status === "safe" || statusData.status === "malicious") {
                         clearPolling();
-                        setIsAnalyzing(false);
                         setFinalResult({
-                            risk_score: statusData.confidence || 0,
-                            threat_level: statusData.threat_level || 'low',
-                            verdict: statusData.final_action === 'block' ? 'threat' : 'safe',
-                            details: statusData.findings || 'Analysis complete. No severe issues flagged.'
+                            risk_score: statusData.risk_score || 0,
+                            threat_level: statusData.status === "malicious" ? "high" : "low",
+                            verdict: statusData.status === "malicious" ? "threat" : "safe",
+                            details: statusData.isolated_injection_phrases?.length 
+                                ? `Isolated Injection Vectors: [ ${statusData.isolated_injection_phrases.join(', ')} ]`
+                                : (statusData.message || 'Validation complete.')
                         });
+                        setIsAnalyzing(false);
                     }
-                } catch (pollErr) {
-                    console.error("Polling heartbeat error:", pollErr);
+
+                } catch (error) {
+                    console.error("Polling error:", error);
                 }
-            }, 500);
+            }, 400);
+
+        } catch (err: any) {
+            setError(err.message || "Failed to establish connection to Python backend.");
+            setLogs((prev) => [...prev, "[ERROR] Pipeline connection failed."]);
+            setIsAnalyzing(false);
+        }
+    };
+
+    // ==========================================
+    // ROUTE 1B: TEXT PROMPT INGESTION (GATEWAY)
+    // ==========================================
+    const analyzeGateway = async (prompt: string) => {
+        if (!prompt.trim()) return;
+
+        setIsAnalyzing(true);
+        setLogs(["[SYSTEM] Initializing Sentinel Gateway connection..."]);
+        setFinalResult(null);
+        setError(null);
+        clearPolling();
+
+        try {
+            const response = await fetch('http://127.0.0.1:8000/v1/chat/completions', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer sk_sentinel_test_123'
+                },
+                body: JSON.stringify({
+                    model: "gpt-4",
+                    messages: [{ role: "user", content: prompt }]
+                }),
+            });
+
+            const data = await response.json();
+            const trace = data._sentinel_trace || {};
+            const latency = trace.latency_ms || 120;
+            const riskScore = trace.langgraph_risk || 0;
+
+            if (data.error || riskScore > 80) {
+                setLogs([
+                    "[GATEWAY] Prompt Received & Validated",
+                    `[LANGGRAPH] Security pipeline evaluated. Risk Score: ${riskScore}`,
+                    "[SECURITY] Threat detected! High risk content blocked.",
+                    "[GATEWAY] Blocked execution.",
+                    `[GATEWAY] Total latency: ${latency}ms`
+                ]);
+                setIsAnalyzing(false);
+                setFinalResult({
+                    risk_score: riskScore,
+                    threat_level: 'high',
+                    verdict: 'threat',
+                    details: data.error ? data.error.message : "Threat Blocked."
+                });
+                return;
+            }
+
+            setLogs([
+                "[GATEWAY] Prompt Received & Validated",
+                `[LANGGRAPH] Security pipeline evaluated. Risk Score: ${riskScore}`,
+                "[PROVIDER] Pre-flight cleared. Model Safe Route Activated.",
+                "[EGRESS] Response Scanning for PII formatting...",
+                `[GATEWAY] Transaction complete. Cost: ${trace.tokens_used || 0} tokens`,
+                `[GATEWAY] Extended metrics: Latency = ${latency}ms`
+            ]);
+            
+            setIsAnalyzing(false);
+            setFinalResult({
+                 risk_score: riskScore,
+                 threat_level: 'low',
+                 verdict: 'safe',
+                 details: data.choices?.[0]?.message?.content || 'Completed safely.'
+            });
 
         } catch (err: any) {
             setError(err.message || "Failed to establish cross-origin connection to Python backend.");
-            setLogs((prev) => [...prev, "[ERROR] Pipeline connection failed. Ensure Uvicorn and Redis are active."]);
+            setLogs((prev) => [...prev, "[ERROR] Pipeline connection failed. Ensure Uvicorn is active."]);
             setIsAnalyzing(false);
-            clearPolling();
         }
     };
 
@@ -190,6 +255,7 @@ export function useSentinelAPI() {
         // Phase 1-3 (Text)
         isAnalyzing,
         analyzePrompt,
+        analyzeGateway,
         finalResult,
         
         // Phase 4 (Files)

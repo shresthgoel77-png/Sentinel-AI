@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, UUID4
 from typing import Dict, Any, Optional
 from typing import List
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 class TaskInitializationResponse(BaseModel):
     task_id: UUID4 = Field(..., description="The unique identity tracking this document's safety analysis.")
@@ -38,3 +39,61 @@ class SecurityExplanationOutput(BaseModel):
         default_factory=list,
         description="List of flagged sections. Must be empty if the document is safe."
     )
+
+class TenantBase(BaseModel):
+    name: str
+
+class TenantCreate(TenantBase):
+    pass
+
+class TenantResponse(TenantBase):
+    id: int
+    
+    class Config:
+        from_attributes = True
+
+class APIKeyBase(BaseModel):
+    is_active: bool = True
+
+class APIKeyCreate(APIKeyBase):
+    hashed_key: str
+    tenant_id: int
+
+class APIKeyResponse(APIKeyBase):
+    id: int
+    tenant_id: int
+    
+    class Config:
+        from_attributes = True
+
+class PolicyBase(BaseModel):
+    configuration: Dict[str, Any]
+
+class PolicyCreate(PolicyBase):
+    tenant_id: int
+
+class PolicyResponse(PolicyBase):
+    id: int
+    tenant_id: int
+    
+    class Config:
+        from_attributes = True
+
+class AuditLogBase(BaseModel):
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    risk_score: Optional[float] = None
+    threats_triggered: Optional[Dict[str, Any]] = None
+    latency_ms: Optional[int] = None
+    tokens_used: Optional[int] = None
+
+class AuditLogCreate(AuditLogBase):
+    tenant_id: int
+
+class AuditLogResponse(AuditLogBase):
+    id: int
+    tenant_id: int
+    timestamp: datetime
+    
+    class Config:
+        from_attributes = True

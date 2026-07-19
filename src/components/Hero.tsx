@@ -38,11 +38,19 @@ export default function Hero() {
         </p>
 
         <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          <a href="#data-leak" className="btn-primary glow-violet w-full sm:w-auto">
-            Try Data Leak Demo
+          <a 
+            href="#live-gateway" 
+            className="btn-primary glow-violet w-full sm:w-auto"
+            onClick={(e) => {
+              e.preventDefault()
+              document.getElementById('live-gateway')?.scrollIntoView({ behavior: 'smooth' })
+              setTimeout(() => document.getElementById('live-gateway-input')?.focus(), 500)
+            }}
+          >
+            Try Live Gateway
           </a>
           <a href="#jailbreak" className="btn-secondary w-full sm:w-auto">
-            Try Jailbreak Demo
+            Deep Prompt Analysis
           </a>
         </div>
 
