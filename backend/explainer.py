@@ -3,6 +3,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from schemas import SecurityExplanationOutput
 from state import ThreatState   
 
+
 # Configure logging for production observability
 logger = logging.getLogger(__name__)
 
