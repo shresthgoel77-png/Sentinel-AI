@@ -7,6 +7,7 @@ class OpenAIProvider(BaseProvider):
         # Using environment var for the upstream provider key
         client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "mock-openai-key"))
         
+        
         # Pydantic v2 dump
         kwargs = request.model_dump(exclude_none=True)
         
