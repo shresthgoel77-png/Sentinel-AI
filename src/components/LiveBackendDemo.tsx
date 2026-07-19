@@ -6,7 +6,6 @@ interface LiveBackendDemoProps {
   onResult: (verdict: Verdict) => void;
 }
 
-
 export default function LiveBackendDemo({ onResult }: LiveBackendDemoProps) {
   const [inputPrompt, setInputPrompt] = useState('');
   const { analyzeGateway, isAnalyzing, logs, finalResult, error, clearPolling } = useSentinelAPI();
