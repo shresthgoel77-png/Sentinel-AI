@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import type { Verdict } from '../lib/types';
 
+
 // ==========================================
 // TYPE DEFINITIONS
 // ==========================================
