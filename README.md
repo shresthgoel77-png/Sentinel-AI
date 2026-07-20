@@ -180,7 +180,6 @@ The project builds into a static `dist/` directory deployable to Vercel, Netlify
 =======
 **Backend Deployment:**
 Ensure your production `.env` securely hosts your production `DATABASE_URL` (Postgres recommended) and `REDIS_URL`. Use Gunicorn as the process manager around Uvicorn, and deploy to AWS, Render, or Railway.
->>>>>>> 38ebb23 (added the runtime gateway logic)
 
 ---
 
@@ -252,11 +251,9 @@ Rather than replacing existing AI models, Sentinel enables enterprises to use th
 - Cross-model risk correlation
 - AI incident investigation
 - Enterprise compliance reporting
-<<<<<<< HEAD
 - Adaptive policy engine
 - Real-time AI risk scoring
 - AI security analytics
-=======
 - Real-time AI risk scoring
 - Continuous AI runtime monitoring
 
