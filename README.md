@@ -137,7 +137,6 @@ npm run dev
 ```
 Open `http://localhost:5173`.
 
-<<<<<<< HEAD
 Open the URL displayed by Vite (typically `http://localhost:5173`).
 
 ### Backend (live Core Engine)
@@ -169,7 +168,6 @@ uvicorn main:app --reload
 The React app connects to the backend at `http://127.0.0.1:8000`.
 
 ### Production Deployment Instructions
->>>>>>> 38ebb23 (added the runtime gateway logic)
 
 **Frontend Build:**
 ```bash
@@ -178,7 +176,6 @@ npm run preview
 ```
 The project builds into a static `dist/` directory deployable to Vercel, Netlify, or GH Pages.
 
-<<<<<<< HEAD
 The project builds into a static `dist/` directory deployable to Vercel, Netlify, GitHub Pages, or Cloudflare Pages.
 =======
 **Backend Deployment:**
@@ -193,7 +190,6 @@ Ensure your production `.env` securely hosts your production `DATABASE_URL` (Pos
 src/
 ├── components/
 │   ├── CoreAnalyzer.tsx      # Deep prompt & file analysis UI
-<<<<<<< HEAD
 │   ├── CombinedDashboard.tsx # Threat analytics dashboard
 │   ├── DataLeakDemo.tsx      # Data leak prevention demo
 │   ├── JailbreakDemo.tsx     # Jailbreak detection demo
@@ -201,7 +197,6 @@ src/
 =======
 │   ├── DarkVeil.tsx          # OGL-powered Background visual layer
 │   ├── CombinedDashboard.tsx # Threat analytics dashboard
->>>>>>> 38ebb23 (added the runtime gateway logic)
 │   └── …                     # Shared UI components
 ├── hooks/
 │   ├── useSentinelAPI.ts     # Backend API integration
@@ -215,7 +210,6 @@ src/
 └── index.css
 
 backend/
-<<<<<<< HEAD
 ├── main.py                   # FastAPI gateway
 ├── graph.py                  # LangGraph threat pipeline
 =======
@@ -225,7 +219,6 @@ backend/
 ├── alembic/                  # Database migration management
 ├── graph.py                  # LangGraph threat pipeline
 ├── redis_client.py           # Upstash Realtime connection wrapper
->>>>>>> 38ebb23 (added the runtime gateway logic)
 ├── extractor.py              # Document extraction
 └── …
 
@@ -265,7 +258,6 @@ Rather than replacing existing AI models, Sentinel enables enterprises to use th
 - AI security analytics
 =======
 - Real-time AI risk scoring
->>>>>>> 38ebb23 (added the runtime gateway logic)
 - Continuous AI runtime monitoring
 
 ---
