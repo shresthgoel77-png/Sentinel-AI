@@ -14,6 +14,45 @@ It enables organizations to securely integrate with providers such as OpenAI, An
 
 ---
 
+## Table of Contents
+
+- [Why Sentinel AI?](#why-sentinel-ai)
+
+- [Technology Stack](#technology-stack)
+
+- [Features & Supported Providers](#features--supported-providers)
+  - [Deep Prompt Analysis & API Endpoints](#deep-prompt-analysis--api-endpoints)
+  - [Flagged Interaction & Current Security Features](#flagged-interaction--current-security-features)
+  - [Threat Dashboard](#threat-dashboard)
+
+- [Core Capabilities](#core-capabilities)
+  - [Runtime AI Security](#runtime-ai-security)
+  - [RAG Shield Pipeline](#rag-shield-pipeline)
+  - [Security Governance](#security-governance)
+  - [AI Observability](#ai-observability)
+
+- [Getting Started: Setup & Installation](#getting-started-setup--installation)
+  - [Requirements](#requirements)
+  - [Environment Variables & Database/Redis Setup](#environment-variables--databaseredis-setup)
+  - [Running the Frontend & Backend](#running-the-frontend--backend)
+  - [Backend (live Core Engine)](#backend-live-core-engine)
+  - [Production build](#production-build)
+  - [Production Deployment Instructions](#production-deployment-instructions)
+
+- [Project Structure](#project-structure)
+
+- [Security Philosophy](#security-philosophy)
+
+- [Vision](#vision)
+
+- [Roadmap](#roadmap)
+
+- [Contributing](#contributing)
+
+- [License](#license)
+
+---
+
 ## Why Sentinel AI?
 
 As organizations rapidly adopt generative AI, traditional application security is no longer enough. AI introduces entirely new attack vectors:
