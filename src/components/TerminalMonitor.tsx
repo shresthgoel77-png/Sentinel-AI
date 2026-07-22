@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ScanVerdict } from '../hooks/useFileScanner';
+import { Copy, Check } from 'lucide-react';
 
 interface TerminalMonitorProps {
   logs: string[];
@@ -8,10 +9,21 @@ interface TerminalMonitorProps {
 
 export const TerminalMonitor: React.FC<TerminalMonitorProps> = ({ logs, verdict }) => {
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(logs.join('\n'));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable or denied
+    }
+  };
 
   // Utility styling identifiers based on log signature types
   const getLogStyle = (log: string) => {
@@ -31,7 +43,14 @@ export const TerminalMonitor: React.FC<TerminalMonitorProps> = ({ logs, verdict 
           <span className="w-2 h-2 rounded-full bg-red-500/60 animate-pulse"></span>
           <span className="text-zinc-500 tracking-wider text-[10px] uppercase">Live Threat Monitoring Output</span>
         </div>
-        <div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopy}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            title="Copy terminal output"
+          >
+            {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+          </button>
           {verdict?.status === 'malicious' && (
             <span className="px-2 py-0.5 text-[10px] bg-red-950 border border-red-700 text-red-400 uppercase tracking-wider font-bold animate-pulse">
               [QUARANTINED]
