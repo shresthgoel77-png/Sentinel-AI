@@ -2,10 +2,12 @@ import os
 from anthropic import AsyncAnthropic, NotGiven
 from .base import BaseProvider
 
+#anthropic 
+# provider 
 class AnthropicProvider(BaseProvider):
     async def generate_completion(self, request, api_key: str):
         client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "mock-anthropic-key"))
-        
+
         system_messages = [m.content for m in request.messages if m.role == "system"]
         anthropic_messages = [{"role": m.role, "content": m.content} for m in request.messages if m.role != "system"]
         
@@ -38,9 +40,12 @@ class AnthropicProvider(BaseProvider):
                 },
                 "finish_reason": "stop"
             }],
+
             "usage": {
                 "prompt_tokens": response.usage.input_tokens,
                 "completion_tokens": response.usage.output_tokens,
                 "total_tokens": response.usage.input_tokens + response.usage.output_tokens
             }
         }
+        
+        

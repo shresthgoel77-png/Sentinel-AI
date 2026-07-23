@@ -5,7 +5,7 @@ import logging
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -19,8 +19,11 @@ from graph import app_graph
 from policy_engine import get_tenant_policy
 import time
 import re
-from database.models import AuditLog
+from database.models import AuditLog, GatewayLog, ActionTaken
 from sqlalchemy import func
+from providers import ProviderRouter
+router_svc = ProviderRouter()
+from fastapi.responses import JSONResponse
 
 # Retain all of your structural project domain imports
 from schemas import TaskInitializationResponse, SourceFileMetadata, DocumentExtractionPayload
@@ -447,6 +450,39 @@ def write_audit_log_background(
     finally:
         db_session.close()
 
+def write_gateway_log_background(
+    request_id: str,
+    client_id: str,
+    provider_used: str,
+    model_name: str,
+    risk_score: float,
+    threat_classification: str,
+    action_taken: ActionTaken,
+    latency_ms: float,
+    token_usage_prompt: int,
+    token_usage_completion: int
+):
+    db_session = SessionLocal()
+    try:
+        log_entry = GatewayLog(
+            request_id=request_id,
+            client_id=client_id,
+            provider_used=provider_used,
+            model_name=model_name,
+            risk_score=risk_score,
+            threat_classification=threat_classification,
+            action_taken=action_taken,
+            latency_ms=latency_ms,
+            token_usage_prompt=token_usage_prompt,
+            token_usage_completion=token_usage_completion
+        )
+        db_session.add(log_entry)
+        db_session.commit()
+    except Exception as e:
+        logger.error(f"Gateway log insertion failed: {e}")
+    finally:
+        db_session.close()
+
 class OpenAIMessage(BaseModel):
     role: str
     content: str
@@ -462,8 +498,10 @@ class OpenAIChatCompletionRequest(BaseModel):
     presence_penalty: Optional[float] = 0.0
     frequency_penalty: Optional[float] = 0.0
 
-@app.post(
-    "/v1/chat/completions",
+v1_router = APIRouter(prefix="/v1")
+
+@v1_router.post(
+    "/chat/completions",
     summary="OpenAI-Compatible Gateway Interception Endpoint",
     tags=["Gateway"]
 )
@@ -475,6 +513,9 @@ async def chat_completions(
 ):
     start_time = time.perf_counter()
     policy = get_tenant_policy(db, api_key.tenant_id)
+    
+    if getattr(request, "stream", False):
+        raise HTTPException(status_code=400, detail="Streaming is currently out of scope for Sentinel AI V1.")
     
     # 1. Compile prompt text from the incoming messages
     prompt_text = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
@@ -488,7 +529,7 @@ async def chat_completions(
         f"System Flags: {sanitizer_flags}"
     )   
     
-    task_id_str = f"gw-{uuid.uuid4()}"
+    task_id_str = str(uuid.uuid4())
     
     initial_state = {
         "task_id": task_id_str,
@@ -504,43 +545,57 @@ async def chat_completions(
     verdict = graph_result.get("semantic_verdict", {})
     risk_score = verdict.get("risk_score", 0)
     threat_signals = {"high_risk_instructions_found": verdict.get("high_risk_instructions_found", False)}
+    classification_reason = verdict.get("justification", "Instruction hierarchy attack detected")
+    threat_class = verdict.get("classification", "PROMPT_INJECTION")
     
     lat = int((time.perf_counter() - start_time) * 1000)
     
     risk_limit = policy.get("max_risk_score", 80)
+    
+    client_id = str(api_key.tenant_id)
+    provider_name = router_svc._get_provider_name(request.model)
     
     # 4. Enforce strict gateway threshold
     if risk_score > risk_limit:
         background_tasks.add_task(
             write_audit_log_background, api_key.tenant_id, "BLOCKED", request.model, risk_score, threat_signals, lat, 0
         )
-        return {
-            "error": {
-                "message": f"Sentinel AI Security Block: Prompt injection or high-risk content detected (Risk Score: {risk_score}).",
-                "type": "security_policy_violation",
-                "param": "prompt",
-                "code": "threat_detected"
-            },
-            "_sentinel_trace": {
-                "langgraph_risk": risk_score,
-                "latency_ms": lat,
-                "threat_signals": threat_signals
+        background_tasks.add_task(
+            write_gateway_log_background,
+            request_id=task_id_str,
+            client_id=client_id,
+            provider_used=provider_name,
+            model_name=request.model,
+            risk_score=float(risk_score),
+            threat_classification=threat_class,
+            action_taken=ActionTaken.BLOCKED,
+            latency_ms=float(lat),
+            token_usage_prompt=0,
+            token_usage_completion=0
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "Blocked by Sentinel AI",
+                "risk_score": risk_score,
+                "classification": threat_class,
+                "reason": classification_reason
             }
-        }
-        
-    # Route dynamically based on the model provided
-    provider_name = ""
-    if request.model.startswith("gpt") or request.model.startswith("o1"):
-        provider = OpenAIProvider()
-        provider_name = "OpenAI"
-    elif request.model.startswith("claude"):
-        provider = AnthropicProvider()
-        provider_name = "Anthropic"
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported LLM provider for model: {request.model}")
+        )
         
     try:
-        response = await provider.generate_completion(request, api_key.hashed_key)
+        response = await router_svc.route(request, api_key.hashed_key)
+        
+        # Check if router returned error gracefully
+        if "error" in response:
+            lat = int((time.perf_counter() - start_time) * 1000)
+            background_tasks.add_task(
+                write_gateway_log_background, request_id=task_id_str, client_id=client_id, provider_used=provider_name, 
+                model_name=request.model, risk_score=float(risk_score), threat_classification=None, 
+                action_taken=ActionTaken.FAILED, latency_ms=float(lat), token_usage_prompt=0, token_usage_completion=0
+            )
+            code = response.get("error", {}).get("code", 500)
+            return JSONResponse(status_code=int(code), content=response)
         
         # 5. Egress Scanning and Redaction
         if policy.get("enable_masking", True):
@@ -551,11 +606,29 @@ async def chat_completions(
                     choice["message"]["content"] = redacted_text
                 
         lat = int((time.perf_counter() - start_time) * 1000)
-        tokens = response.get("usage", {}).get("total_tokens", 0)
+        
+        usage = response.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        tokens = usage.get("total_tokens", 0)
         
         # 6. Dispatch async Audit Logging tracking performance and cost mapping silently
         background_tasks.add_task(
             write_audit_log_background, api_key.tenant_id, provider_name, request.model, risk_score, threat_signals, lat, tokens
+        )
+        
+        background_tasks.add_task(
+            write_gateway_log_background,
+            request_id=task_id_str,
+            client_id=client_id,
+            provider_used=provider_name,
+            model_name=request.model,
+            risk_score=float(risk_score),
+            threat_classification=None,
+            action_taken=ActionTaken.ALLOWED,
+            latency_ms=float(lat),
+            token_usage_prompt=prompt_tokens,
+            token_usage_completion=completion_tokens
         )
         
         if isinstance(response, dict):
@@ -568,13 +641,19 @@ async def chat_completions(
         
         return response
     except Exception as e:
+        lat = int((time.perf_counter() - start_time) * 1000)
+        background_tasks.add_task(
+            write_gateway_log_background, request_id=task_id_str, client_id=client_id, provider_used=provider_name, 
+            model_name=request.model, risk_score=float(risk_score), threat_classification=None, 
+            action_taken=ActionTaken.FAILED, latency_ms=float(lat), token_usage_prompt=0, token_usage_completion=0
+        )
         raise HTTPException(status_code=500, detail=f"Provider generation failed: {str(e)}")
 
 # =====================================================================
 # PHASE 6: OPERATIONAL INTELLIGENCE SUITE
 # ==========================================
-@app.get(
-    "/v1/analytics/dashboard",
+@v1_router.get(
+    "/analytics/dashboard",
     summary="Global Analytics Dashboard Data",
     tags=["Analytics"]
 )
@@ -609,3 +688,5 @@ async def get_dashboard_analytics(db: Session = Depends(get_db)):
             "totalTokens": total_tokens
         }
     }
+
+app.include_router(v1_router)

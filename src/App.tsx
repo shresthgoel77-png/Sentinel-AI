@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import StatusBar from './components/StatusBar'
 import Hero from './components/Hero'
 import LiveBackendDemo from './components/LiveBackendDemo'
+import GatewayDemo from './components/GatewayDemo'
 import CoreAnalyzer from './components/CoreAnalyzer'
 import CombinedDashboard from './components/CombinedDashboard'
 import Architecture from './components/Architecture'
@@ -41,19 +42,19 @@ export default function App() {
 
   // Update immediately after a local scan
   const handleScanResult = useCallback(() => {
-    setTimeout(fetchAnalytics, 1500); 
+    setTimeout(fetchAnalytics, 1500);
   }, [])
 
   return (
     <div style={{ position: 'relative', width: '100%', minHeight: '100vh', overflow: 'hidden' }}>
-      
+
       {/* Background layer */}
-      <div 
-        style={{ 
-          position: 'absolute', 
-          inset: 0, 
-          zIndex: -1, 
-          pointerEvents: 'none' 
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: -1,
+          pointerEvents: 'none'
         }}
       >
         <DarkVeil />
@@ -63,6 +64,7 @@ export default function App() {
       <main className="flex flex-col flex-grow" style={{ position: 'relative', zIndex: 1 }}>
         <StatusBar stats={stats as any} />
         <Hero />
+        <GatewayDemo />
         <LiveBackendDemo onResult={handleScanResult} />
         {/* The single point of entry for analyzing prompts */}
         <CoreAnalyzer onResult={handleScanResult} />

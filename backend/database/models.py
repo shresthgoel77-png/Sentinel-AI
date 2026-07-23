@@ -1,7 +1,13 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, JSON, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 import datetime
+import enum
 from .database import Base
+
+class ActionTaken(enum.Enum):
+    ALLOWED = "ALLOWED"
+    BLOCKED = "BLOCKED"
+    FAILED = "FAILED"
 
 
 class Tenant(Base):
@@ -39,3 +45,18 @@ class AuditLog(Base):
     latency_ms = Column(Integer)
     tokens_used = Column(Integer)
     tenant = relationship("Tenant", back_populates="audit_logs")
+
+class GatewayLog(Base):
+    __tablename__ = "gateway_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(String(36), index=True, nullable=False)
+    client_id = Column(String, index=True, nullable=False)
+    provider_used = Column(String, nullable=False)
+    model_name = Column(String, nullable=False)
+    risk_score = Column(Float, nullable=False)
+    threat_classification = Column(String, nullable=True)
+    action_taken = Column(Enum(ActionTaken), nullable=False)
+    latency_ms = Column(Float, nullable=False)
+    token_usage_prompt = Column(Integer, default=0)
+    token_usage_completion = Column(Integer, default=0)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
