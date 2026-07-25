@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "C:\Users\HP\OneDrive\Desktop\.vscode\ai-shield\backend\debug.py", line 3, in <module>
+    import tests.test_gateway
+  File "C:\Users\HP\OneDrive\Desktop\.vscode\ai-shield\backend\tests\test_gateway.py", line 3, in <module>
+    from main import app, verify_api_key
+  File "C:\Users\HP\OneDrive\Desktop\.vscode\ai-shield\backend\main.py", line 15, in <module>
+    from providers.openai import OpenAIProvider
+  File "C:\Users\HP\OneDrive\Desktop\.vscode\ai-shield\backend\providers\__init__.py", line 3, in <module>
+    from .router import ProviderRouter
+  File "C:\Users\HP\OneDrive\Desktop\.vscode\ai-shield\backend\providers\router.py", line 3, in <module>
+    from .openai import OpenAIProvider
+  File "C:\Users\HP\OneDrive\Desktop\.vscode\ai-shield\backend\providers\openai.py", line 2, in <module>
+    from openai import AsyncOpenAI
+ModuleNotFoundError: No module named 'openai'
