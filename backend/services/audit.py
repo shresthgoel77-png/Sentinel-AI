@@ -8,6 +8,7 @@ def write_audit_log_background(
     tenant_id: int, provider_name: str, model_name: str,
     risk_score: float, threats_json: dict, latency: int, tokens: int
 ):
+    
     db_session = SessionLocal()
     try:
         log_entry = AuditLog(
