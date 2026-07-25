@@ -31,3 +31,12 @@ __pycache__/
 *.sqlite
 *.sqlite3
 sentinel.db
+
+# Local logs and test outputs
+*.log
+*_log.txt
+*_log2.txt
+err.txt
+push_error.txt
+test_output.txt
+pytest_output.txt
