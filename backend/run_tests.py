@@ -5,4 +5,3 @@ with open("pytest_utf8.log", "w", encoding="utf-8") as f:
     f.write(result.stdout)
     f.write(result.stderr)
 
-#This is only a test file 

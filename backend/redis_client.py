@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # Load variables from .env
 load_dotenv()
 
+
 class RedisManager:
     def __init__(self):
         # 1. Grab the URL from the environment
