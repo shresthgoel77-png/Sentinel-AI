@@ -9,6 +9,7 @@ class TaskInitializationResponse(BaseModel):
     status: str = Field("PARSING_COMPLETE", description="Initial status written to the cache layer.")
 
 
+
 class SourceFileMetadata(BaseModel):
     filename: str
     content_type: str
