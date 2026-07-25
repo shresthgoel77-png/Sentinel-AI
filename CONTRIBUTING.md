@@ -2,7 +2,6 @@
 
 First off, thank you for considering contributing to Sentinel AI! It's people like you that make building secure, enterprise-grade AI applications possible. 
 
-
 Sentinel AI is an interactive AI runtime security platform, and we welcome contributions across the board—whether it's adding new threat detection rules, improving our LangGraph RAG pipeline, fixing UI bugs, or writing documentation.
 
 ## Table of Contents
@@ -22,12 +21,13 @@ By participating in this project, you are expected to uphold our [Code of Conduc
 
 ## Getting Started
 
-Sentinel AI consists of a React/TypeScript frontend (Vite) and a Python/FastAPI backend. 
+Sentinel AI consists of a React/TypeScript frontend (Vite) and a Python/FastAPI backend backed by PostgreSQL and Redis.
 
 ### Prerequisites
 
 * **Node.js**: v18 or higher (for the frontend)
-* **Python**: 3.9 or higher (for the backend and AI agents)
+* **Python**: 3.9 or higher (for the backend core engine)
+* **Docker Desktop**: Required for local PostgreSQL and Redis instances
 * **Git**
 
 ### Local Setup
@@ -38,22 +38,33 @@ Sentinel AI consists of a React/TypeScript frontend (Vite) and a Python/FastAPI 
     cd Sentinel-AI
     ```
 
-2.  **Set up the Frontend:**
+2.  **Environment Variables & Infrastructure:**
+    Create a `.env` file in the root directory (for frontend) and inside `/backend` (for backend) using the required keys listed in the `README.md`. Boot up the local databases via Docker:
     ```bash
-    npm install
-    npm run dev
+    docker run --name sentinel-postgres -e POSTGRES_PASSWORD=password -p 5432:5432 -d postgres:16
+    docker run --name sentinel-redis -p 6379:6379 -d redis
     ```
-    The frontend will be available at `http://localhost:5173`.
 
 3.  **Set up the Backend (FastAPI):**
-    Navigate to the `backend` directory (adjust path if necessary) and set up your virtual environment:
+    Navigate to the `backend` directory, set up your virtual environment, and apply database migrations:
     ```bash
     cd backend
     python -m venv venv
     source venv/bin/activate  # On Windows use: venv\Scripts\activate
     pip install -r requirements.txt
-    uvicorn main:app --reload
+    alembic upgrade head      # Run database migrations
+    uvicorn main:app --reload --port 8000
     ```
+    *(Note for Windows users: You can simply run `.\launch.ps1` from the root directory to automate the backend and DB boot sequence).*
+
+4.  **Set up the Frontend:**
+    In a separate terminal block at the project root:
+    ```bash
+    npm install
+    npm run dev
+    ```
+    The frontend will be available at `http://localhost:5173`.
+    *(Note for Windows users: You can use `.\launch-frontend.ps1`).*
 
 ## How to Contribute
 
@@ -63,7 +74,7 @@ Before creating bug reports, please check the [Issue Tracker](https://github.com
 * A clear and descriptive title.
 * Exact steps to reproduce the problem.
 * Expected behavior vs. actual behavior.
-* Your environment (OS, Node version, Python version, Browser).
+* Your environment (OS, Node version, Python version, Browser, Docker status).
 
 ### Suggesting Enhancements
 
@@ -80,7 +91,7 @@ We are always looking to expand our threat detection engine and policy enforceme
     ```
     *(Use `bugfix/`, `feature/`, or `docs/` prefixes).*
 2.  **Make your changes**, ensuring you follow our styleguides.
-3.  **Test your changes** locally. Ensure both the frontend dashboard and backend pipelines are functioning correctly.
+3.  **Test your changes** locally. Ensure both the frontend dashboard and backend pipelines are functioning correctly. You can use `make test` to run the backend integration tests.
 4.  **Commit your changes** using clear, descriptive commit messages.
 5.  **Push to your fork** and submit a Pull Request to the `main` branch of the Sentinel AI repository.
 6.  **Link the PR** to any relevant open issues.
@@ -89,7 +100,8 @@ We are always looking to expand our threat detection engine and policy enforceme
 
 * **Security First:** Since this is a security platform, ensure your contributions do not introduce new vulnerabilities. Never commit hardcoded secrets or API keys.
 * **Keep it Modular:** When adding new UI components, place them in the appropriate `src/components/` subfolder (e.g., `Dashboard`, `Threat Analysis`).
-* **Update Documentation:** If you are adding a new detector to `lib/detectors.ts` or modifying the RAG Shield Pipeline, please update the `README.md` and inline documentation accordingly.
+* **Update Documentation:** If you are adding a new detector to `lib/detectors.ts` or modifying the LangGraph RAG Pipeline, please update the `README.md` and inline documentation accordingly.
+* **Use the Makefile:** For streamlined workflows, refer to the `Makefile` in the root directory (e.g., running `make test` for backend verification).
 
 ## Styleguides
 
@@ -105,7 +117,7 @@ We are always looking to expand our threat detection engine and policy enforceme
 
 ### Python (Backend / AI Stack)
 * Follow PEP 8 guidelines.
-* Use type hints wherever possible.
-* When interacting with LangChain or LangGraph, ensure your chains are properly isolated and testable.
+* Use type hints wherever possible to maintain FastAPI schema contracts.
+* When interacting with LangChain or LangGraph, ensure your nodes are properly isolated, stateless where possible, and testable.
 
 Thank you for helping us secure enterprise AI!
