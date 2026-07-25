@@ -10,7 +10,7 @@
   <em>The live interactive demo dashboard — scan stats, threat counters, and one-click access to security demos.</em>
 </p>
 
-It enables organizations to securely integrate with providers such as OpenAI, Anthropic, Google Gemini, Azure OpenAI, Amazon Bedrock, Vertex AI, and self-hosted models — enforcing security controls before, during, and after every AI interaction.
+It enables organizations to securely integrate with providers such as OpenAI, Anthropic, Google Gemini, Azure OpenAI, Amazon Bedrock, Vertex AI, Ollama, and self-hosted models — enforcing security controls before, during, and after every AI interaction.
 
 ---
 
@@ -19,9 +19,10 @@ It enables organizations to securely integrate with providers such as OpenAI, An
 As organizations rapidly adopt generative AI, traditional application security is no longer enough. AI introduces entirely new attack vectors:
 
 - Prompt injection and jailbreak attempts
-- Sensitive data leakage (PII, credentials) in model responses
+- Sensitive data leakage (PII, credentials) in model responses (Data Loss Prevention)
 - Malicious RAG documents poisoned before ingestion
 - Policy violations and multi-tenant isolation breaches
+- **Operational Intelligence & SOC gaps:** Lack of live traffic streaming, persistent Multi-Tenancy control, and async webhook alerting.
 
 Sentinel is designed to become the **runtime security layer** for enterprise AI applications — providing continuous inspection, threat detection, governance, multi-tenant policy enforcement, and egress masking without requiring changes to the underlying model.
 
@@ -34,28 +35,30 @@ Sentinel is designed to become the **runtime security layer** for enterprise AI 
 
 | Layer | Technologies |
 |-------|-------------|
-| **Frontend** | React, TypeScript, Vite, Tailwind CSS, OGL (DarkVeil Shader) |
-| **Backend** | Python, FastAPI, SQLAlchemy, Alembic, OpenAI SDK |
-| **Infrastructure** | PostgreSQL (State/Tenants/Logs), Upstash Redis (Caching/Realtime PubSub) |
-| **AI Stack** | LangChain, LangGraph, RAG Pipeline |
+| **Frontend (SaaS Shell)** | React, TypeScript, Vite, Tailwind CSS, Recharts, Lucide-React, OGL (DarkVeil Shader) |
+| **Backend (Gateway)** | Python, FastAPI (Async Loop & BackgroundTasks), SQLAlchemy, Alembic, OpenAI SDK |
+| **Infrastructure** | PostgreSQL (State/Tenants/Incidents), Redis (aioredis, Edge-Caching, Rate Limiting) |
+| **AI Security Stack** | LangChain, LangGraph (State Machine), RAG Pipeline |
 
 ---
 
 ## Features & Supported Providers
 
-The frontend ships with an interactive demo while the Backend functions as a production OpenAI-compatible API Gateway. Supported providers currently include **OpenAI (gpt, o1 models)** and **Anthropic (claude)** via dynamic routing.
+The frontend ships with an interactive demo while the Backend functions as a production OpenAI-compatible API Gateway. Supported providers currently include **OpenAI (gpt, o1 models)**, **Anthropic (claude)**, and **Google Gemini** via a dynamic Adapter Design Pattern routing.
 
 | Feature | What it does (Current Capabilities) |
 |---------|--------------|
-| **OpenAI-Compatible Gateway** | Intercepts `/v1/chat/completions` providing drop-in security for existing apps |
-| **Deep Prompt Analysis** | Inspects raw strings and uploaded documents for injection patterns in real time |
-| **Egress Data Masking** | Automatically redacts API keys, credentials, and PII migrating out of the LLM |
-| **Multi-Tenant Policies** | Custom Risk limits and features per organization, managed by PostgreSQL |
-| **Threat Dashboard** | Persistent Audit Logs track total scans, safe requests, tokens used, and threats blocked |
+| **OpenAI-Compatible Gateway** | Intercepts `/v1/chat/completions` natively injecting Tenant and Application contexts, providing drop-in security. |
+| **Pre-Execution Security Pipeline** | Distributed LangGraph nodes (`analyze_semantics`, `detect_heuristics`, `evaluate_harm`) intercept threats in real-time. |
+| **Egress Data Masking (DLP)** | Post-execution string parsing via `Sanitizer.py` automatically redacts API keys, credentials, and PII migrating out of the LLM. |
+| **Multi-Tenant Policies** | Custom Risk limits and features per organization dynamically evaluated from PostgreSQL (e.g., `evaluate_policies()`). |
+| **Non-Blocking Telemetry & SOC** | FastAPI BackgroundTasks (`write_incident_background`) persist Gateway logs and dispatch Webhook/Slack alerts without impacting LLM latency. |
 
 ### Deep Prompt Analysis & API Endpoints
 
-The Core Engine analyzes incoming vectors. You can hit the API via real-time endpoints (e.g. `/api/analyze-prompt`, `/api/analyze-document`) or via the UI.
+The Core Engine analyzes incoming vectors using a cyclical LangGraph State Machine. You can hit the API via real-time endpoints (e.g., `/api/analyze-prompt`, `/api/analyze-document`) or via the UI. 
+
+If a prompt exceeds a **risk score of 70**, the `ThreatState` halts the LangGraph and immediately blocks the payload with an HTTP `403`.
 
 <p align="center">
   <img src="docs/images/core-analyzer.png" alt="Sentinel AI Core Engine — Deep Prompt Analysis interface with payload input and live terminal" width="900" />
@@ -63,7 +66,7 @@ The Core Engine analyzes incoming vectors. You can hit the API via real-time end
 
 ### Flagged Interaction & Current Security Features
 
-When a suspicious prompt is submitted through the `/v1/chat/completions` API or the UI, Sentinel streams live pipeline logs, assigns a **risk score**, and returns a classification. A jailbreak attempt scoring above the Tenant's authorized policy threshold will trigger a `403/Block`.
+When a suspicious prompt is submitted through the `/v1/chat/completions` API or the UI, Sentinel streams live pipeline logs, assigns a **risk score**, and returns a classification. A jailbreak attempt scoring above the Tenant's authorized policy threshold will trigger a block.
 
 <p align="center">
   <img src="docs/images/flagged-interaction.png" alt="Sentinel AI flagged jailbreak prompt with risk score 95/100, HIGH classification, and live pipeline logs" width="900" />
@@ -71,7 +74,11 @@ When a suspicious prompt is submitted through the `/v1/chat/completions` API or 
 
 ### Threat Dashboard
 
-The System Analytics panel grabs persistent logs from PostgreSQL and tracks metrics — threats neutralized, latency, provider split, and overall token consumption — updating dynamically.
+The System Analytics panel grabs persistent logs from PostgreSQL and tracks metrics — threats neutralized, latency, provider split, and overall token consumption — updating dynamically via Recharts. The Dashboard features comprehensive management across:
+- **Applications & Keys:** Generate and manage secure API keys tied directly to Postgres.
+- **Policy Studio & Test Bench:** Toggle policies (`PATCH /v1/policies/{id}/toggle`) and run the Simulator against the `DocumentSanitizer` graph model.
+- **Incident Queue:** Perform forensic previews of trapped anomalous API transactions and resolve them.
+- **Audit & Reports:** Export complete `AuditLog` row geometries to CSV.
 
 <p align="center">
   <img src="docs/images/threat-dashboard.png" alt="Sentinel AI System Analytics dashboard showing threats neutralized, verified safe, and threat ratio" width="900" />
@@ -82,90 +89,84 @@ The System Analytics panel grabs persistent logs from PostgreSQL and tracks metr
 ## Core Capabilities
 
 ### Runtime AI Security
-
-- Prompt injection & Jailbreak detection algorithms
-- Input and output security analysis with PII/Credential filtering
-- Runtime threat detection engine routing Anthropic/OpenAI
-- Persistent Multi-Tenant Policy enforcement engine
+- **End-to-End Execution Lifecycle:** `HTTPBearer` intercepts -> Policy Materialization bounds checking -> LangGraph Engine Handoff -> Adapter Invocation Bridge -> Post-Execution Egress checks -> Telemetry Offloading.
+- Prompt injection & Jailbreak detection algorithms.
+- Input and output security analysis with PII/Credential filtering.
+- Extensible Gateway Design (Open/Closed Principle) routing through abstract classes, keeping the core vendor-agnostic.
 
 ### RAG Shield Pipeline
-
 Sentinel secures retrieval-augmented generation (RAG) systems **before** documents are ingested into vector databases:
-
-- Extracts content from multiple document formats
-- Detects hidden prompt injections and encoded instructions
-- Removes zero-width characters and normalizes hidden formatting
-
-This prevents poisoned knowledge bases before retrieval ever occurs.
+- Extracts content from multiple document formats.
+- Detects hidden prompt injections and encoded instructions.
+- Removes zero-width characters and normalizes hidden formatting.
 
 ### Security Governance
-
-- Policy-based AI request validation mapping limits directly to SQLite/Postgres
-- Security rule enforcement via LangGraph middleware
-- Enterprise audit logging parsing tokens, latency, and endpoints
-- Threat visibility and runtime decision tracking
+- Policy-based AI request validation mapping limits directly to Postgres.
+- Security rule enforcement via LangGraph middleware.
+- Enterprise audit logging parsing tokens, latency, and endpoints.
 
 ### AI Observability
-
-Sentinel provides visibility into AI runtime behavior by tracking requests, security decisions, threat detections, policy violations, and runtime events — completely decoupled from the provider.
+Sentinel provides visibility into AI runtime behavior by tracking requests, security decisions, threat detections, and policy violations. Using FastAPI BackgroundTasks, observability side-effects never block the primary proxy execution loop.
 
 ---
 
 ## Getting Started: Setup & Installation
 
 ### Requirements
-
 - **Node.js** 18+ (frontend)
 - **Python** 3.9+ (backend)
-- **Git** & **Docker** (optional, for Postgres)
+- **Git** & **Docker** (Required for PostgreSQL & Redis)
 
-### Environment Variables & Database/Redis Setup
+### Environment Variables
 
-1. Copy the `.env.example` file to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-2. Fill out your `OPENAI_API_KEY` and `REDIS_URL`. Start your local PostgreSQL instance (or use the configured default SQLite fallback via `database.py`).
-3. (Optional) Run `docker-compose up -d` to spin up a local PostgreSQL container.
+**Backend (`/backend/.env`):**
+```dotenv
+DATABASE_URL=postgresql://user:password@localhost:5432/sentinel
+REDIS_URL=redis://localhost:6379
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+JWT_SECRET_KEY=generate_a_secure_random_key_here
+```
 
-### Running the Frontend & Backend
+### Frontend (`/.env`):
+```
+VITE_API_URL=http://localhost:8000/v1
+```
 
-**Frontend (interactive UI):**
-```bash
+### Running Locally (Mac/Linux)
+1. Boot Database & Redis (Docker):
+```
+docker run --name sentinel-postgres -e POSTGRES_PASSWORD=password -p 5432:5432 -d postgres:16
+docker run --name sentinel-redis -p 6379:6379 -d redis
+```
+2. Backend (Live Core Engine & Gateway):
+```
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+alembic upgrade head         # Run DB migrations
+uvicorn main:app --reload --port 8000
+```
+3. Frontend (Interactive UI):
+```
 npm install
 npm run dev
 ```
-Open `http://localhost:5173`.
+Open `http://localhost:5173`
 
-Open the URL displayed by Vite (typically `http://localhost:5173`).
+### Running Locally (Windows 11)
+1. We have created specialized scripts to ensure safe initialization on Windows. Ensure Docker Desktop is running.
+2. Open PowerShell in the project root and run Step A to boot DBs, apply Alembic migrations, and launch Uvicorn:
+   ```powershell
+   .\launch.ps1
 
-### Backend (live Core Engine)
-
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS / Linux
-pip install -r requirements.txt
-set GOOGLE_API_KEY=your-key  # Windows
-uvicorn main:app --reload
+3. Open a second PowerShell window and run Step B to boot the React frontend:
 ```
-
-The React app connects to the backend at `http://127.0.0.1:8000`.
-
-### Production build
-=======
-**Backend (live Core Engine & Gateway):**
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS / Linux
-pip install -r requirements.txt
-alembic upgrade head         # Run DB migrations
-uvicorn main:app --reload
+.\launch-frontend.ps1
 ```
-The React app connects to the backend at `http://127.0.0.1:8000`.
+(Fallback: If Docker is unavailable, install PostgreSQL 16 locally and Redis via WSL Ubuntu terminal.)
+
 
 ### Production Deployment Instructions
 
@@ -174,10 +175,9 @@ The React app connects to the backend at `http://127.0.0.1:8000`.
 npm run build
 npm run preview
 ```
-The project builds into a static `dist/` directory deployable to Vercel, Netlify, or GH Pages.
 
 The project builds into a static `dist/` directory deployable to Vercel, Netlify, GitHub Pages, or Cloudflare Pages.
-=======
+
 **Backend Deployment:**
 Ensure your production `.env` securely hosts your production `DATABASE_URL` (Postgres recommended) and `REDIS_URL`. Use Gunicorn as the process manager around Uvicorn, and deploy to AWS, Render, or Railway.
 
@@ -193,31 +193,27 @@ src/
 │   ├── DataLeakDemo.tsx      # Data leak prevention demo
 │   ├── JailbreakDemo.tsx     # Jailbreak detection demo
 │   ├── RiskMeter.tsx         # Risk score visualization
-=======
 │   ├── DarkVeil.tsx          # OGL-powered Background visual layer
-│   ├── CombinedDashboard.tsx # Threat analytics dashboard
 │   └── …                     # Shared UI components
 ├── hooks/
 │   ├── useSentinelAPI.ts     # Backend API integration
 │   └── useCountUp.ts
 ├── lib/
 │   ├── detectors.ts          # Client-side pattern rules
-│   ├── sampleData.ts
+│   ├── sampleData.ts         # Mock data separated from execution states
 │   └── types.ts
 ├── App.tsx
 ├── main.tsx
 └── index.css
 
 backend/
-├── main.py                   # FastAPI gateway
-├── graph.py                  # LangGraph threat pipeline
-=======
-├── main.py                   # FastAPI gateway & endpoints
-├── database/                 # SQLAlchemy schemas (models) and sqlite engine
-├── providers/                # OpenAI/Anthropic SDK abstractions
+├── main.py                   # FastAPI gateway & endpoints (Async Event Loop)
+├── database/                 # SQLAlchemy schemas (models.py) and DB engines
+├── providers/                # OpenAI/Anthropic SDK abstractions (Adapter Pattern)
 ├── alembic/                  # Database migration management
-├── graph.py                  # LangGraph threat pipeline
-├── redis_client.py           # Upstash Realtime connection wrapper
+├── graph.py                  # LangGraph threat pipeline & StateGraph logic
+├── policy_engine.py          # Policy Materialization & dependency injection
+├── redis_client.py           # aioredis connection wrapper & rate limiting
 ├── extractor.py              # Document extraction
 └── …
 
@@ -253,8 +249,6 @@ Rather than replacing existing AI models, Sentinel enables enterprises to use th
 - Enterprise compliance reporting
 - Adaptive policy engine
 - Real-time AI risk scoring
-- AI security analytics
-- Real-time AI risk scoring
 - Continuous AI runtime monitoring
 
 ---
@@ -268,3 +262,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, development workflow, an
 ## License
 
 This project is intended as the foundation of **Sentinel AI**, an enterprise AI runtime security platform.
+See [LICENSE](LICENSE) 
