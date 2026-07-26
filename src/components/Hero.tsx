@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-export default function Hero() {
+export default function Hero({ onSelectFeature }: { onSelectFeature?: (feature: 'prompt' | 'document' | 'gateway') => void }) {
   const navigate = useNavigate();
+  const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   return (
     <section id="top" className="relative overflow-hidden border-b border-edge/60 pb-24 pt-20 sm:pt-28">
       {/* Background grid */}
@@ -49,20 +51,21 @@ export default function Hero() {
             <div className="absolute inset-0 rounded-lg border border-white/20 transition-all duration-300 group-hover:scale-105 opacity-0 group-hover:opacity-100"></div>
           </button>
 
-          <a
-            href="#live-gateway"
-            className="btn-primary glow-violet w-full sm:w-auto"
-            onClick={(e) => {
-              e.preventDefault()
-              document.getElementById('live-gateway')?.scrollIntoView({ behavior: 'smooth' })
-              setTimeout(() => document.getElementById('live-gateway-input')?.focus(), 500)
-            }}
-          >
-            Try Live Gateway
-          </a>
-          <a href="#jailbreak" className="btn-secondary w-full sm:w-auto text-center py-3">
-            Deep Prompt Analysis
-          </a>
+          <div className="relative w-full sm:w-auto">
+            <button
+              onClick={() => setIsSelectorOpen(!isSelectorOpen)}
+              className="btn-primary glow-violet w-full sm:w-auto flex items-center justify-center gap-2"
+            >
+              Explore Features {isSelectorOpen ? '▲' : '▼'}
+            </button>
+            {isSelectorOpen && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-surface shadow-2xl rounded-lg border border-edge overflow-hidden z-20 flex flex-col min-w-[220px]">
+                <button onClick={() => { setIsSelectorOpen(false); onSelectFeature?.('prompt'); }} className="px-4 py-3 text-left hover:bg-white/5 transition-colors border-b border-edge/50 text-white font-medium text-sm">Prompt Analysis</button>
+                <button onClick={() => { setIsSelectorOpen(false); onSelectFeature?.('document'); }} className="px-4 py-3 text-left hover:bg-white/5 transition-colors border-b border-edge/50 text-white font-medium text-sm">Document/PDF Analysis</button>
+                <button onClick={() => { setIsSelectorOpen(false); onSelectFeature?.('gateway'); }} className="px-4 py-3 text-left hover:bg-white/5 transition-colors text-white font-medium text-sm">Live Gateway Demo</button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mx-auto mt-16 grid max-w-lg grid-cols-3 gap-px overflow-hidden rounded-2xl border border-edge bg-edge">

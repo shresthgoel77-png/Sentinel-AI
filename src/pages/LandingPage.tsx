@@ -11,6 +11,7 @@ import Footer from '../components/Footer'
 import DarkVeil from '../components/DarkVeil'
 
 export default function LandingPage() {
+  const [activeFeature, setActiveFeature] = useState<'none' | 'prompt' | 'document' | 'gateway'>('none');
   const [stats, setStats] = useState<any>({
     threatsBlocked: 0,
     safeRequests: 0,
@@ -45,6 +46,25 @@ export default function LandingPage() {
     setTimeout(fetchAnalytics, 1500);
   }, [])
 
+  const handleFeatureSelect = (feature: 'prompt' | 'document' | 'gateway') => {
+    setActiveFeature(feature);
+    setTimeout(() => {
+      let elId = '';
+      if (feature === 'prompt') elId = 'live-gateway';
+      if (feature === 'document') elId = 'core-engine';
+      if (feature === 'gateway') elId = 'gateway-demo';
+
+      const el = document.getElementById(elId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+        // Optional focus
+        if (feature === 'prompt') {
+          setTimeout(() => document.getElementById('live-gateway-input')?.focus(), 500);
+        }
+      }
+    }, 100);
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', minHeight: '100vh', overflow: 'hidden' }}>
 
@@ -63,11 +83,13 @@ export default function LandingPage() {
       {/* Existing application content */}
       <main className="flex flex-col flex-grow" style={{ position: 'relative', zIndex: 1 }}>
         <StatusBar stats={stats as any} />
-        <Hero />
-        <GatewayDemo />
-        <LiveBackendDemo onResult={handleScanResult} />
+        <Hero onSelectFeature={handleFeatureSelect} />
+
+        {activeFeature === 'gateway' && <GatewayDemo />}
+        {activeFeature === 'prompt' && <LiveBackendDemo onResult={handleScanResult} />}
         {/* The single point of entry for analyzing prompts */}
-        <CoreAnalyzer onResult={handleScanResult} />
+        {activeFeature === 'document' && <CoreAnalyzer onResult={handleScanResult} />}
+
         <CombinedDashboard stats={stats} />
         <Architecture />
         <JudgesSection />
