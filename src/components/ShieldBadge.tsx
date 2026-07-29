@@ -15,7 +15,7 @@ export default function ShieldBadge({
 
   return (
     <div
-      className={`inline-flex items-center gap-2.5 rounded-full border px-4 py-2 font-display text-sm font-medium ${
+      className={`inline-flex items-center gap-2.5 rounded-full border px-4 py-2 font-display text-sm font-medium transition-all duration-200 hover:scale-105 hover:brightness-110 ${
         isSafe ? 'border-safe/40 bg-safe/10 text-safe' : 'border-danger/40 bg-danger/10 text-danger'
       }`}
     >

@@ -16,7 +16,7 @@ export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Threats Blocked Metric */}
-          <div className="rounded-xl bg-void border border-edge p-6">
+          <div className="rounded-xl bg-void border border-edge p-6 transition-all duration-200 hover:scale-105 hover:brightness-110">
             <div className="text-slate-500 font-mono text-sm mb-2">Threats Neutralized</div>
             <div className="text-4xl font-display font-bold text-danger">
               {stats.threatsBlocked}
@@ -24,7 +24,7 @@ export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
           </div>
 
           {/* Safe Requests Metric */}
-          <div className="rounded-xl bg-void border border-edge p-6">
+          <div className="rounded-xl bg-void border border-edge p-6 transition-all duration-200 hover:scale-105 hover:brightness-110">
             <div className="text-slate-500 font-mono text-sm mb-2">Verified Safe</div>
             <div className="text-4xl font-display font-bold text-safe">
               {stats.safeRequests}
@@ -32,7 +32,7 @@ export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
           </div>
 
           {/* Threat Ratio Metric */}
-          <div className="rounded-xl bg-void border border-edge p-6">
+          <div className="rounded-xl bg-void border border-edge p-6 transition-all duration-200 hover:scale-105 hover:brightness-110">
             <div className="text-slate-500 font-mono text-sm mb-2">Threat Ratio</div>
             <div className="flex items-baseline gap-2">
               <div className="text-4xl font-display font-bold text-violet-400">
@@ -42,7 +42,7 @@ export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
           </div>
           
           {/* Avg Latency Metric */}
-          <div className="rounded-xl bg-void border border-edge p-6">
+          <div className="rounded-xl bg-void border border-edge p-6 transition-all duration-200 hover:scale-105 hover:brightness-110">
             <div className="text-slate-500 font-mono text-sm mb-2">Avg Execution Latency</div>
             <div className="flex items-baseline gap-2">
               <div className="text-4xl font-display font-bold text-cyan">
@@ -53,7 +53,7 @@ export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
           </div>
           
           {/* Global Risk Index */}
-          <div className="rounded-xl bg-void border border-edge p-6">
+          <div className="rounded-xl bg-void border border-edge p-6 transition-all duration-200 hover:scale-105 hover:brightness-110">
             <div className="text-slate-500 font-mono text-sm mb-2">Global Risk Index</div>
             <div className="flex items-baseline gap-2">
               <div className="text-4xl font-display font-bold text-orange-400">
@@ -63,7 +63,7 @@ export default function CombinedDashboard({ stats }: CombinedDashboardProps) {
           </div>
           
           {/* Total Tokens Protected */}
-          <div className="rounded-xl bg-void border border-edge p-6">
+          <div className="rounded-xl bg-void border border-edge p-6 transition-all duration-200 hover:scale-105 hover:brightness-110">
             <div className="text-slate-500 font-mono text-sm mb-2">Tokens Processed</div>
             <div className="text-4xl font-display font-bold text-emerald-400">
               {stats.totalTokens || 0}
