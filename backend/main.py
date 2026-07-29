@@ -2,43 +2,43 @@ import uuid
 import asyncio
 import json
 import logging
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import List, Optional
-from sqlalchemy.orm import Session
-
-from database.database import SessionLocal
-from database.models import APIKey
-from providers.openai import OpenAIProvider
-from providers.anthropic import AnthropicProvider
 import time
 import re
-import json
 import secrets
 import datetime
-from database.models import AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
+import csv
+import sys
+from io import StringIO
+from contextlib import asynccontextmanager
+from typing import Any, List, Optional
+
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.orm import Session
+from sqlalchemy import func, cast, Date, case, text
+
+from database.database import SessionLocal, engine
+from database.models import APIKey, AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
+from providers.openai import OpenAIProvider
+from providers.anthropic import AnthropicProvider
+from providers import ProviderRouter
 from sanitizer import DocumentSanitizer, EgressSanitizer
 from graph import app_graph
 from policy_engine import get_tenant_policy, evaluate_policies
 from services.audit import write_audit_log_background, write_gateway_log_background
-from sqlalchemy import func, cast, Date, case
-from providers import ProviderRouter
-router_svc = ProviderRouter()
-from fastapi.responses import JSONResponse, StreamingResponse
-import csv
-from io import StringIO
-
-# Retain all of your structural project domain imports
-from schemas import (TaskInitializationResponse, SourceFileMetadata, 
-                     DocumentExtractionPayload, ApplicationCreate, ApplicationResponse, 
+from schemas import (TaskInitializationResponse, SourceFileMetadata,
+                     DocumentExtractionPayload, ApplicationCreate, ApplicationResponse,
                      IncidentResponse, IncidentUpdate, PolicyCreate, PolicyResponse, PolicyRuleCreate,
                      AlertChannelCreate, AlertChannelResponse, TrafficLogResponse, TeamMemberCreate, TeamMemberResponse, CompliancePostureResponse)
 from extractor import SecureDocumentExtractor
 from redis_client import RedisManager
 from langgraph_engine import LangGraphEngineHandoff
+from cache import tasks_db
+
+router_svc = ProviderRouter()
 
 # Set up clean system logging
 logging.basicConfig(level=logging.INFO)
@@ -47,34 +47,34 @@ logger = logging.getLogger("sentinel.gateway")
 # Setup Lifespan state management for clean resource handling
 redis_manager: RedisManager = None
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global redis_manager
     logger.info("Initializing Sentinel Gateway State Layers...")
-    
-    import sys
-    from sqlalchemy import text
-    from database.database import engine
-    
+
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info("PostgreSQL connected successfully.")
     except Exception as e:
         logger.error(f"Cannot connect to PostgreSQL at {engine.url}. Is Docker running? Error: {e}")
-        sys.exit(1)
-        
+        raise
+
     try:
         redis_manager = RedisManager()
         await redis_manager.client.ping()
         logger.info("Redis connected successfully.")
     except Exception as e:
         logger.error(f"Cannot connect to Redis. Is Docker running? Error: {e}")
-        sys.exit(1)
-        
+        raise
+
+    await tasks_db.start()
     yield
     logger.info("Tearing down Sentinel Gateway State Layers...")
-    await redis_manager.close()
+    await tasks_db.stop()
+    if redis_manager:
+        await redis_manager.close()
 
 app = FastAPI(title="Sentinel AI - Pre-Ingestion Node Gateway", version="1.0.0", lifespan=lifespan)
 
@@ -93,7 +93,6 @@ app.add_middleware(
 )
 
 # Shared Memory State to feed the rapid 400ms React terminal polling interface
-tasks_db = {}
 
 
 # =====================================================================
@@ -157,33 +156,33 @@ async def run_phase4_analysis_pipeline(task_id: str, file_name: str, file_bytes:
         pass
 
     # Stage 1: Structure Extraction
-    tasks_db[task_id] = {
+    await tasks_db.__setitem__(task_id, {
         "status": "processing",
         "stage": "PARSER",
         "message": f"[PARSER] Extracting structures from {file_name}...",
         "isolated_injection_phrases": [],
         "risk_score": 12
-    }
+    })
     await asyncio.sleep(1.2)  # Maintain visual processing cadence
 
     # Stage 2: Deep Heuristics Scanning
-    tasks_db[task_id] = {
+    await tasks_db.__setitem__(task_id, {
         "status": "processing",
         "stage": "HEURISTICS",
         "message": "[HEURISTICS] Checking for Unicode Lookalikes & Base64 payloads...",
         "isolated_injection_phrases": [],
         "risk_score": 40
-    }
+    })
     await asyncio.sleep(1.6)
 
     # Stage 3: Semantic Verification Agent
-    tasks_db[task_id] = {
+    await tasks_db.__setitem__(task_id, {
         "status": "processing",
         "stage": "SEMANTIC_AGENT",
         "message": "[SEMANTIC AGENT] Processing intent validation with Gemini...",
         "isolated_injection_phrases": [],
         "risk_score": 65
-    }
+    })
     await asyncio.sleep(1.5)
 
     # Stage 4: Risk Resolution Boundary Determination
@@ -192,23 +191,23 @@ async def run_phase4_analysis_pipeline(task_id: str, file_name: str, file_bytes:
 
     if found_threats or "malicious" in file_name.lower():
         # High-risk verdict matches -> Trigger QUARANTINED interface state
-        tasks_db[task_id] = {
+        await tasks_db.__setitem__(task_id, {
             "status": "malicious",
             "stage": "SEMANTIC_AGENT",
             "message": "[CRITICAL] Direct Prompt Injection exploit payload identified.",
             "isolated_injection_phrases": found_threats if found_threats else ["Bypass System Rules Trigger"],
             "risk_score": 98
-        }
+        })
         logger.warning(f"Phase 4 Pipeline Sandbox [MALICIOUS] Vector Isolated: {task_id}")
     else:
         # Secure execution signature -> Trigger INGESTION_READY auth badge
-        tasks_db[task_id] = {
+        await tasks_db.__setitem__(task_id, {
             "status": "safe",
             "stage": "SEMANTIC_AGENT",
             "message": "[SUCCESS] Validation complete. Zero high-risk exploit signals mapped.",
             "isolated_injection_phrases": [],
             "risk_score": 3
-        }
+        })
         logger.info(f"Phase 4 Pipeline Sandbox [SAFE] Processing Complete: {task_id}")
 
 
@@ -434,15 +433,15 @@ async def get_pipeline_status(task_id: str):
             logger.error(f"Failed to fetch status from Redis: {str(e)}")
 
     # 2. Fall back to local tasks_db (simulated pipeline status)
-    if task_id in tasks_db:
-        task_data = tasks_db[task_id]
+    task_data = await tasks_db.get(task_id)
+    if task_data is not None:
         status_val = task_data.get("status", "processing")
         is_complete = status_val in ["safe", "malicious"]
         risk_score = task_data.get("risk_score", 0)
-        
+
         threat_level = "high" if status_val == "malicious" else "low"
         final_action = "block" if status_val == "malicious" else "allow"
-        
+
         return {
             "status": status_val,
             "stage": task_data.get("stage"),
