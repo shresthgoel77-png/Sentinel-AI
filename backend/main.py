@@ -8,13 +8,14 @@ import secrets
 import datetime
 import csv
 import sys
+import os
 from io import StringIO
 from contextlib import asynccontextmanager
 from typing import Any, List, Optional
 
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter, Header
+from fastapi import FastAPI, Request, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -44,13 +45,11 @@ router_svc = ProviderRouter()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel.gateway")
 
-# Setup Lifespan state management for clean resource handling
-redis_manager: RedisManager = None
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".html", ".md", ".txt"}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global redis_manager
     logger.info("Initializing Sentinel Gateway State Layers...")
 
     try:
@@ -62,8 +61,8 @@ async def lifespan(app: FastAPI):
         raise
 
     try:
-        redis_manager = RedisManager()
-        await redis_manager.client.ping()
+        app.state.redis_manager = RedisManager()
+        await app.state.redis_manager.client.ping()
         logger.info("Redis connected successfully.")
     except Exception as e:
         logger.error(f"Cannot connect to Redis. Is Docker running? Error: {e}")
@@ -73,8 +72,8 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Tearing down Sentinel Gateway State Layers...")
     await tasks_db.stop()
-    if redis_manager:
-        await redis_manager.close()
+    if app.state.redis_manager:
+        await app.state.redis_manager.close()
 
 app = FastAPI(title="Sentinel AI - Pre-Ingestion Node Gateway", version="1.0.0", lifespan=lifespan)
 
@@ -120,7 +119,7 @@ async def write_incident_background(incident_data: dict, tenant_id: int):
         
         # Async Webhook alert
         if incident_data.get("severity") in ["Critical", "High"]:
-            channels = db.query(AlertChannel).filter(AlertChannel.tenant_id == tenant_id, AlertChannel.is_active == True).all()
+            channels = db.query(AlertChannel).filter(AlertChannel.tenant_id == tenant_id, AlertChannel.is_active.is_(True)).all()
             for c in channels:
                 try:
                     import requests
@@ -129,8 +128,9 @@ async def write_incident_background(incident_data: dict, tenant_id: int):
                 except Exception as e:
                     logger.error(f"Failed webhook: {str(e)}")
                     
-        if redis_manager and redis_manager.client:
-            await redis_manager.client.publish("incidents:feed", json.dumps({"id": new_incident.id, "type": new_incident.type}))
+        rm = app.state.redis_manager if hasattr(app.state, "redis_manager") else None
+        if rm and rm.client:
+            await rm.client.publish("incidents:feed", json.dumps({"id": new_incident.id, "type": new_incident.type}))
     except Exception as e:
         logger.error(f"Failed to write incident: {str(e)}")
     finally:
@@ -152,8 +152,8 @@ async def run_phase4_analysis_pipeline(task_id: str, file_name: str, file_bytes:
     content_sample = ""
     try:
         content_sample = file_bytes.decode("utf-8", errors="ignore")
-    except Exception:
-        pass
+    except Exception as decode_err:
+        logger.warning("Could not decode file bytes as UTF-8: %s", decode_err)
 
     # Stage 1: Structure Extraction
     await tasks_db.__setitem__(task_id, {
@@ -221,13 +221,18 @@ async def run_phase4_analysis_pipeline(task_id: str, file_name: str, file_bytes:
     summary="Ingest, unpack, and scan documents for indirect prompt injection vectors before database write."
 )
 async def analyze_document(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Target payload file stream (PDF, DOCX, HTML, MD, TXT).")
 ):
     # 1. Capture basic file traits safely
     filename = file.filename
     content_type = file.content_type
-    
+
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type '{ext}' is not permitted. Allowed: {', '.join(ALLOWED_UPLOAD_EXTENSIONS)}")
+
     try:
         # 2. Stream layout bytes securely in memory
         file_bytes = await file.read()
@@ -260,7 +265,7 @@ async def analyze_document(
     task_id = uuid.uuid4()
     
     # 5. Initialize the state signature inside our Redis cache layer
-    await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+    await request.app.state.redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
     
     # 6. Construct data transfer payload object
     extraction_payload = DocumentExtractionPayload(
@@ -291,7 +296,8 @@ class PromptAnalysisRequest(BaseModel):
     summary="Direct ingestion channel for raw text prompt scanning."
 )
 async def analyze_prompt(
-    request: PromptAnalysisRequest,
+    req: PromptAnalysisRequest,
+    request: Request,
     background_tasks: BackgroundTasks
 ):
     try:
@@ -300,16 +306,16 @@ async def analyze_prompt(
         source_metadata = SourceFileMetadata(
             filename="raw_prompt.txt",
             content_type="text/plain",
-            file_size_bytes=len(request.text)
+            file_size_bytes=len(req.text)
         )
         
         # Initialize in Redis
-        await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+        await request.app.state.redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
         
         extraction_payload = DocumentExtractionPayload(
             task_id=task_id,
             source_metadata=source_metadata,
-            extracted_plaintext=request.text,
+            extracted_plaintext=req.text,
             metadata_payload="",
             security_flags={}
         )
@@ -327,9 +333,13 @@ async def analyze_prompt(
     "/api/scan",
     summary="Direct ingestion channel for the real-time dark terminal visualization console."
 )
-async def initial_file_ingestion(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def initial_file_ingestion(request: Request, background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    filename = file.filename
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type '{ext}' is not permitted. Allowed: {', '.join(ALLOWED_UPLOAD_EXTENSIONS)}")
+
     try:
-        filename = file.filename
         content_type = file.content_type
         file_bytes = await file.read()
         file_size = len(file_bytes)
@@ -353,7 +363,7 @@ async def initial_file_ingestion(background_tasks: BackgroundTasks, file: Upload
         task_id = uuid.uuid4()
         
         # Initialize in Redis
-        await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+        await request.app.state.redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
         
         extraction_payload = DocumentExtractionPayload(
             task_id=task_id,
@@ -378,6 +388,7 @@ async def initial_file_ingestion(background_tasks: BackgroundTasks, file: Upload
 )
 async def get_pipeline_status(task_id: str):
     # 1. Check Redis first
+    redis_manager = app.state.redis_manager if hasattr(app.state, "redis_manager") else None
     if redis_manager and redis_manager.client:
         try:
             redis_data = await redis_manager.client.get(f"status:{task_id}")
@@ -517,7 +528,8 @@ async def health_check(db: Session = Depends(get_db)):
         status["database"] = "down"
         status["status"] = "degraded"
     
-    if not redis_manager or not redis_manager.client:
+    rm = app.state.redis_manager if hasattr(app.state, "redis_manager") else None
+    if not rm or not rm.client:
         status["redis"] = "down"
         status["status"] = "degraded"
         
@@ -777,7 +789,7 @@ async def update_incident(incident_id: int, update_data: IncidentUpdate, api_key
     if update_data.status:
         record.status = update_data.status
         if update_data.status in ["resolved", "false_positive"]:
-            record.resolved_at = datetime.datetime.utcnow()
+            record.resolved_at = datetime.datetime.now(datetime.timezone.utc)
             record.resolved_by = update_data.resolved_by or "Admin Viewer"
             
     db.commit()
@@ -865,7 +877,7 @@ async def test_policy_bench(data: PolicyTestRequest, api_key: APIKey = Depends(v
 # ==========================================
 @v1_router.get("/overview", tags=["Analytics"])
 async def get_overview_analytics(api_key: APIKey = Depends(verify_api_key), db: Session = Depends(get_db)):
-    today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     
     threats_blocked_today = db.query(func.count(Incident.id)).filter(
         Incident.tenant_id == api_key.tenant_id,
@@ -881,7 +893,7 @@ async def get_overview_analytics(api_key: APIKey = Depends(verify_api_key), db: 
     policy_health_score = max(10, 100 - (open_incidents * 2))
     apps_protected = db.query(func.count(Application.id)).filter(Application.tenant_id == api_key.tenant_id).scalar() or 0
     
-    week_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+    week_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
     trend_query = db.query(
         cast(GatewayLog.time_stamp, Date).label('date'),
         func.sum(case((GatewayLog.action_taken == 'ALLOWED', 1), else_=0)).label('allowed'),
@@ -1018,10 +1030,10 @@ async def complete_onboarding(api_key: APIKey = Depends(verify_api_key), db: Ses
 
 @v1_router.get("/compliance/posture", response_model=CompliancePostureResponse, tags=["Compliance"])
 async def get_compliance_posture(api_key: APIKey = Depends(verify_api_key), db: Session = Depends(get_db)):
-    active_policies = db.query(Policy).filter(Policy.tenant_id == api_key.tenant_id, Policy.is_active == True).count()
+    active_policies = db.query(Policy).filter(Policy.tenant_id == api_key.tenant_id, Policy.is_active.is_(True)).count()
     return CompliancePostureResponse(
         frameworks_active=["SOC2", "GDPR"] if active_policies > 0 else ["Internal Baseline"],
-        last_audit_date=datetime.datetime.utcnow(),
+        last_audit_date=datetime.datetime.now(datetime.timezone.utc),
         event_retention_days=90,
         soc2_aligned=(active_policies >= 2)
     )

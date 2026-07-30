@@ -37,16 +37,14 @@ class TTLInMemoryCache:
             self._cleanup_task = None
 
     async def _run_cleanup_loop(self):
-        try:
-            while True:
+        while True:
+            try:
                 await asyncio.sleep(self.cleanup_interval)
                 await self._evict_expired()
-        except asyncio.CancelledError:
-            return
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.exception("TTL cache cleanup loop failed: %s", exc)
-            await asyncio.sleep(self.cleanup_interval)
-            await self._run_cleanup_loop()
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                logger.exception("TTL cache cleanup loop failed: %s", exc)
 
     def _evict_expired_sync(self):
         now = time.time()
