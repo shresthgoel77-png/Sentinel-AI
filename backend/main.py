@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Request, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from passlib.context import CryptContext
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date, case, text
@@ -472,6 +473,7 @@ async def get_pipeline_status(task_id: str):
 # PHASE 5: GATEWAY INTERCEPTION ROUTES (OpenAI SDK Compatible)
 # =====================================================================
 security = HTTPBearer()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_db():
     db = SessionLocal()
@@ -481,15 +483,20 @@ def get_db():
         db.close()
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security), db: Session = Depends(get_db)):
-    if not credentials.credentials.startswith("sk_sentinel_"):
+    token = credentials.credentials
+    if not token.startswith("sk_sentinel_"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API Key format",
             headers={"WWW-Authenticate": "Bearer"},
         )
     from sqlalchemy.orm import joinedload
-    api_key_record = db.query(APIKey).options(joinedload(APIKey.application)).filter(APIKey.hashed_key == credentials.credentials).first()
-    if not api_key_record or not api_key_record.is_active:
+    prefix = token[:16]
+    candidates = db.query(APIKey).options(joinedload(APIKey.application)).filter(
+        APIKey.key_prefix == prefix, APIKey.is_active.is_(True)
+    ).all()
+    api_key_record = next((k for k in candidates if pwd_context.verify(token, k.hashed_key)), None)
+    if not api_key_record:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or inactive API Key",
@@ -737,7 +744,8 @@ async def generate_app_key(app_id: int, api_key: APIKey = Depends(verify_api_key
         
     raw_key = f"sk_sentinel_{secrets.token_urlsafe(24)}"
     new_key = APIKey(
-        hashed_key=raw_key,
+        key_prefix=raw_key[:16],
+        hashed_key=pwd_context.hash(raw_key),
         tenant_id=api_key.tenant_id,
         application_id=app_id
     )
