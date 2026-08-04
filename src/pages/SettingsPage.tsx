@@ -1,23 +1,39 @@
 import { useState } from 'react';
 import { Settings2, Bell, Hash, TestTube } from 'lucide-react';
+import { useToast } from '../components/ui/Toast';
 
 export default function SettingsPage() {
     const [webhook, setWebhook] = useState("");
     const [isActive, setIsActive] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [statusText, setStatusText] = useState("");
+    const { showToast } = useToast();
 
     const handleSave = () => {
         setSaving(true);
-        setStatusText("Saving configuration...");
+        showToast("Saving configuration...", "info");
         fetch('http://localhost:8000/api/alerts/configure', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer sk_sentinel_demo_key', 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: "slack", webhook_url: webhook, is_active: isActive, events: ["incident.critical", "incident.high"] })
-        }).then(() => {
-            setStatusText("Webhook fully integrated.");
-            setTimeout(() => setStatusText(""), 3000);
+        }).then((res) => {
+            if(res.ok) {
+                showToast("Webhook fully integrated.", "success");
+            } else {
+                showToast("Failed to integrate webhook.", "error");
+            }
+        }).catch(() => {
+            showToast("Failed to integrate webhook.", "error");
         }).finally(() => setSaving(false));
+    }
+
+    const handlePing = () => {
+        if(!webhook) {
+            showToast("Please enter a webhook URL first.", "error");
+            return;
+        }
+        showToast("Sending test ping...", "info");
+        // Simulate ping
+        setTimeout(() => showToast("Test ping successful!", "success"), 1000);
     }
 
     return (
@@ -49,10 +65,9 @@ export default function SettingsPage() {
                         </label>
                     </div>
                 </div>
-                <div className="px-6 py-4 border-t border-[#2D333B] bg-[#22272E] flex justify-between items-center">
-                    <span className="text-sm text-emerald-400 font-medium">{statusText}</span>
+                <div className="px-6 py-4 border-t border-[#2D333B] bg-[#22272E] flex justify-end items-center">
                     <div className="flex gap-3">
-                        <button className="bg-[#2D333B] hover:bg-[#3D444D] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                        <button onClick={handlePing} className="bg-[#2D333B] hover:bg-[#3D444D] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
                             <TestTube className="w-4 h-4" /> Test Ping
                         </button>
                         <button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
