@@ -24,8 +24,6 @@ from sqlalchemy import func, cast, Date, case, text
 
 from database.database import SessionLocal, engine
 from database.models import APIKey, AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
-from providers.openai import OpenAIProvider
-from providers.anthropic import AnthropicProvider
 from providers import ProviderRouter
 from sanitizer import DocumentSanitizer, EgressSanitizer
 from graph import app_graph
