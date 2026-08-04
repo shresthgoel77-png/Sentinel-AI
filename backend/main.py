@@ -2,79 +2,79 @@ import uuid
 import asyncio
 import json
 import logging
-import time
-import re
-import secrets
-import datetime
-import csv
-import sys
-import os
-from io import StringIO
-from contextlib import asynccontextmanager
-from typing import Any, List, Optional
-
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Request, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter, Header
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, status, Depends, Security, APIRouter, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from passlib.context import CryptContext
-from fastapi.responses import JSONResponse, StreamingResponse
+from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Date, case, text
 
-from database.database import SessionLocal, engine
-from database.models import APIKey, AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
+from database.database import SessionLocal
+from database.models import APIKey
 from providers.openai import OpenAIProvider
 from providers.anthropic import AnthropicProvider
-from providers import ProviderRouter
+import time
+import re
+import json
+import secrets
+import datetime
+from database.models import AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
 from sanitizer import DocumentSanitizer, EgressSanitizer
 from graph import app_graph
 from policy_engine import get_tenant_policy, evaluate_policies
 from services.audit import write_audit_log_background, write_gateway_log_background
-from schemas import (TaskInitializationResponse, SourceFileMetadata,
-                     DocumentExtractionPayload, ApplicationCreate, ApplicationResponse,
+from sqlalchemy import func, cast, Date, case
+from providers import ProviderRouter
+router_svc = ProviderRouter()
+from fastapi.responses import JSONResponse, StreamingResponse
+import csv
+from io import StringIO
+
+# Retain all of your structural project domain imports
+from schemas import (TaskInitializationResponse, SourceFileMetadata, 
+                     DocumentExtractionPayload, ApplicationCreate, ApplicationResponse, 
                      IncidentResponse, IncidentUpdate, PolicyCreate, PolicyResponse, PolicyRuleCreate,
                      AlertChannelCreate, AlertChannelResponse, TrafficLogResponse, TeamMemberCreate, TeamMemberResponse, CompliancePostureResponse)
 from extractor import SecureDocumentExtractor
 from redis_client import RedisManager
 from langgraph_engine import LangGraphEngineHandoff
-from cache import tasks_db
-
-router_svc = ProviderRouter()
 
 # Set up clean system logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel.gateway")
 
-ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".html", ".md", ".txt"}
-
+# Setup Lifespan state management for clean resource handling
+redis_manager: RedisManager = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global redis_manager
     logger.info("Initializing Sentinel Gateway State Layers...")
-
+    
+    import sys
+    from sqlalchemy import text
+    from database.database import engine
+    
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info("PostgreSQL connected successfully.")
     except Exception as e:
         logger.error(f"Cannot connect to PostgreSQL at {engine.url}. Is Docker running? Error: {e}")
-        raise
-
+        sys.exit(1)
+        
     try:
-        app.state.redis_manager = RedisManager()
-        await app.state.redis_manager.client.ping()
+        redis_manager = RedisManager()
+        await redis_manager.client.ping()
         logger.info("Redis connected successfully.")
     except Exception as e:
         logger.error(f"Cannot connect to Redis. Is Docker running? Error: {e}")
-        raise
-
-    await tasks_db.start()
+        sys.exit(1)
+        
     yield
     logger.info("Tearing down Sentinel Gateway State Layers...")
-    await tasks_db.stop()
-    if app.state.redis_manager:
-        await app.state.redis_manager.close()
+    await redis_manager.close()
 
 app = FastAPI(title="Sentinel AI - Pre-Ingestion Node Gateway", version="1.0.0", lifespan=lifespan)
 
@@ -93,6 +93,7 @@ app.add_middleware(
 )
 
 # Shared Memory State to feed the rapid 400ms React terminal polling interface
+tasks_db = {}
 
 
 # =====================================================================
@@ -120,7 +121,7 @@ async def write_incident_background(incident_data: dict, tenant_id: int):
         
         # Async Webhook alert
         if incident_data.get("severity") in ["Critical", "High"]:
-            channels = db.query(AlertChannel).filter(AlertChannel.tenant_id == tenant_id, AlertChannel.is_active.is_(True)).all()
+            channels = db.query(AlertChannel).filter(AlertChannel.tenant_id == tenant_id, AlertChannel.is_active == True).all()
             for c in channels:
                 try:
                     import requests
@@ -129,9 +130,8 @@ async def write_incident_background(incident_data: dict, tenant_id: int):
                 except Exception as e:
                     logger.error(f"Failed webhook: {str(e)}")
                     
-        rm = app.state.redis_manager if hasattr(app.state, "redis_manager") else None
-        if rm and rm.client:
-            await rm.client.publish("incidents:feed", json.dumps({"id": new_incident.id, "type": new_incident.type}))
+        if redis_manager and redis_manager.client:
+            await redis_manager.client.publish("incidents:feed", json.dumps({"id": new_incident.id, "type": new_incident.type}))
     except Exception as e:
         logger.error(f"Failed to write incident: {str(e)}")
     finally:
@@ -153,37 +153,37 @@ async def run_phase4_analysis_pipeline(task_id: str, file_name: str, file_bytes:
     content_sample = ""
     try:
         content_sample = file_bytes.decode("utf-8", errors="ignore")
-    except Exception as decode_err:
-        logger.warning("Could not decode file bytes as UTF-8: %s", decode_err)
+    except Exception:
+        pass
 
     # Stage 1: Structure Extraction
-    await tasks_db.__setitem__(task_id, {
+    tasks_db[task_id] = {
         "status": "processing",
         "stage": "PARSER",
         "message": f"[PARSER] Extracting structures from {file_name}...",
         "isolated_injection_phrases": [],
         "risk_score": 12
-    })
+    }
     await asyncio.sleep(1.2)  # Maintain visual processing cadence
 
     # Stage 2: Deep Heuristics Scanning
-    await tasks_db.__setitem__(task_id, {
+    tasks_db[task_id] = {
         "status": "processing",
         "stage": "HEURISTICS",
         "message": "[HEURISTICS] Checking for Unicode Lookalikes & Base64 payloads...",
         "isolated_injection_phrases": [],
         "risk_score": 40
-    })
+    }
     await asyncio.sleep(1.6)
 
     # Stage 3: Semantic Verification Agent
-    await tasks_db.__setitem__(task_id, {
+    tasks_db[task_id] = {
         "status": "processing",
         "stage": "SEMANTIC_AGENT",
         "message": "[SEMANTIC AGENT] Processing intent validation with Gemini...",
         "isolated_injection_phrases": [],
         "risk_score": 65
-    })
+    }
     await asyncio.sleep(1.5)
 
     # Stage 4: Risk Resolution Boundary Determination
@@ -192,23 +192,23 @@ async def run_phase4_analysis_pipeline(task_id: str, file_name: str, file_bytes:
 
     if found_threats or "malicious" in file_name.lower():
         # High-risk verdict matches -> Trigger QUARANTINED interface state
-        await tasks_db.__setitem__(task_id, {
+        tasks_db[task_id] = {
             "status": "malicious",
             "stage": "SEMANTIC_AGENT",
             "message": "[CRITICAL] Direct Prompt Injection exploit payload identified.",
             "isolated_injection_phrases": found_threats if found_threats else ["Bypass System Rules Trigger"],
             "risk_score": 98
-        })
+        }
         logger.warning(f"Phase 4 Pipeline Sandbox [MALICIOUS] Vector Isolated: {task_id}")
     else:
         # Secure execution signature -> Trigger INGESTION_READY auth badge
-        await tasks_db.__setitem__(task_id, {
+        tasks_db[task_id] = {
             "status": "safe",
             "stage": "SEMANTIC_AGENT",
             "message": "[SUCCESS] Validation complete. Zero high-risk exploit signals mapped.",
             "isolated_injection_phrases": [],
             "risk_score": 3
-        })
+        }
         logger.info(f"Phase 4 Pipeline Sandbox [SAFE] Processing Complete: {task_id}")
 
 
@@ -222,18 +222,13 @@ async def run_phase4_analysis_pipeline(task_id: str, file_name: str, file_bytes:
     summary="Ingest, unpack, and scan documents for indirect prompt injection vectors before database write."
 )
 async def analyze_document(
-    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Target payload file stream (PDF, DOCX, HTML, MD, TXT).")
 ):
     # 1. Capture basic file traits safely
     filename = file.filename
     content_type = file.content_type
-
-    ext = os.path.splitext(filename or "")[1].lower()
-    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"File type '{ext}' is not permitted. Allowed: {', '.join(ALLOWED_UPLOAD_EXTENSIONS)}")
-
+    
     try:
         # 2. Stream layout bytes securely in memory
         file_bytes = await file.read()
@@ -266,7 +261,7 @@ async def analyze_document(
     task_id = uuid.uuid4()
     
     # 5. Initialize the state signature inside our Redis cache layer
-    await request.app.state.redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+    await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
     
     # 6. Construct data transfer payload object
     extraction_payload = DocumentExtractionPayload(
@@ -297,8 +292,7 @@ class PromptAnalysisRequest(BaseModel):
     summary="Direct ingestion channel for raw text prompt scanning."
 )
 async def analyze_prompt(
-    req: PromptAnalysisRequest,
-    request: Request,
+    request: PromptAnalysisRequest,
     background_tasks: BackgroundTasks
 ):
     try:
@@ -307,16 +301,16 @@ async def analyze_prompt(
         source_metadata = SourceFileMetadata(
             filename="raw_prompt.txt",
             content_type="text/plain",
-            file_size_bytes=len(req.text)
+            file_size_bytes=len(request.text)
         )
         
         # Initialize in Redis
-        await request.app.state.redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+        await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
         
         extraction_payload = DocumentExtractionPayload(
             task_id=task_id,
             source_metadata=source_metadata,
-            extracted_plaintext=req.text,
+            extracted_plaintext=request.text,
             metadata_payload="",
             security_flags={}
         )
@@ -334,13 +328,9 @@ async def analyze_prompt(
     "/api/scan",
     summary="Direct ingestion channel for the real-time dark terminal visualization console."
 )
-async def initial_file_ingestion(request: Request, background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    filename = file.filename
-    ext = os.path.splitext(filename or "")[1].lower()
-    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"File type '{ext}' is not permitted. Allowed: {', '.join(ALLOWED_UPLOAD_EXTENSIONS)}")
-
+async def initial_file_ingestion(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     try:
+        filename = file.filename
         content_type = file.content_type
         file_bytes = await file.read()
         file_size = len(file_bytes)
@@ -364,7 +354,7 @@ async def initial_file_ingestion(request: Request, background_tasks: BackgroundT
         task_id = uuid.uuid4()
         
         # Initialize in Redis
-        await request.app.state.redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
+        await redis_manager.initialize_task(task_id=task_id, initial_status="PARSING_COMPLETE")
         
         extraction_payload = DocumentExtractionPayload(
             task_id=task_id,
@@ -389,7 +379,6 @@ async def initial_file_ingestion(request: Request, background_tasks: BackgroundT
 )
 async def get_pipeline_status(task_id: str):
     # 1. Check Redis first
-    redis_manager = app.state.redis_manager if hasattr(app.state, "redis_manager") else None
     if redis_manager and redis_manager.client:
         try:
             redis_data = await redis_manager.client.get(f"status:{task_id}")
@@ -445,15 +434,15 @@ async def get_pipeline_status(task_id: str):
             logger.error(f"Failed to fetch status from Redis: {str(e)}")
 
     # 2. Fall back to local tasks_db (simulated pipeline status)
-    task_data = await tasks_db.get(task_id)
-    if task_data is not None:
+    if task_id in tasks_db:
+        task_data = tasks_db[task_id]
         status_val = task_data.get("status", "processing")
         is_complete = status_val in ["safe", "malicious"]
         risk_score = task_data.get("risk_score", 0)
-
+        
         threat_level = "high" if status_val == "malicious" else "low"
         final_action = "block" if status_val == "malicious" else "allow"
-
+        
         return {
             "status": status_val,
             "stage": task_data.get("stage"),
@@ -473,7 +462,6 @@ async def get_pipeline_status(task_id: str):
 # PHASE 5: GATEWAY INTERCEPTION ROUTES (OpenAI SDK Compatible)
 # =====================================================================
 security = HTTPBearer()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_db():
     db = SessionLocal()
@@ -483,20 +471,15 @@ def get_db():
         db.close()
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security), db: Session = Depends(get_db)):
-    token = credentials.credentials
-    if not token.startswith("sk_sentinel_"):
+    if not credentials.credentials.startswith("sk_sentinel_"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API Key format",
             headers={"WWW-Authenticate": "Bearer"},
         )
     from sqlalchemy.orm import joinedload
-    prefix = token[:16]
-    candidates = db.query(APIKey).options(joinedload(APIKey.application)).filter(
-        APIKey.key_prefix == prefix, APIKey.is_active.is_(True)
-    ).all()
-    api_key_record = next((k for k in candidates if pwd_context.verify(token, k.hashed_key)), None)
-    if not api_key_record:
+    api_key_record = db.query(APIKey).options(joinedload(APIKey.application)).filter(APIKey.hashed_key == credentials.credentials).first()
+    if not api_key_record or not api_key_record.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or inactive API Key",
@@ -535,8 +518,7 @@ async def health_check(db: Session = Depends(get_db)):
         status["database"] = "down"
         status["status"] = "degraded"
     
-    rm = app.state.redis_manager if hasattr(app.state, "redis_manager") else None
-    if not rm or not rm.client:
+    if not redis_manager or not redis_manager.client:
         status["redis"] = "down"
         status["status"] = "degraded"
         
@@ -744,8 +726,7 @@ async def generate_app_key(app_id: int, api_key: APIKey = Depends(verify_api_key
         
     raw_key = f"sk_sentinel_{secrets.token_urlsafe(24)}"
     new_key = APIKey(
-        key_prefix=raw_key[:16],
-        hashed_key=pwd_context.hash(raw_key),
+        hashed_key=raw_key,
         tenant_id=api_key.tenant_id,
         application_id=app_id
     )
@@ -797,7 +778,7 @@ async def update_incident(incident_id: int, update_data: IncidentUpdate, api_key
     if update_data.status:
         record.status = update_data.status
         if update_data.status in ["resolved", "false_positive"]:
-            record.resolved_at = datetime.datetime.now(datetime.timezone.utc)
+            record.resolved_at = datetime.datetime.utcnow()
             record.resolved_by = update_data.resolved_by or "Admin Viewer"
             
     db.commit()
@@ -885,7 +866,7 @@ async def test_policy_bench(data: PolicyTestRequest, api_key: APIKey = Depends(v
 # ==========================================
 @v1_router.get("/overview", tags=["Analytics"])
 async def get_overview_analytics(api_key: APIKey = Depends(verify_api_key), db: Session = Depends(get_db)):
-    today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
     threats_blocked_today = db.query(func.count(Incident.id)).filter(
         Incident.tenant_id == api_key.tenant_id,
@@ -901,7 +882,7 @@ async def get_overview_analytics(api_key: APIKey = Depends(verify_api_key), db: 
     policy_health_score = max(10, 100 - (open_incidents * 2))
     apps_protected = db.query(func.count(Application.id)).filter(Application.tenant_id == api_key.tenant_id).scalar() or 0
     
-    week_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+    week_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
     trend_query = db.query(
         cast(GatewayLog.time_stamp, Date).label('date'),
         func.sum(case((GatewayLog.action_taken == 'ALLOWED', 1), else_=0)).label('allowed'),
@@ -1038,10 +1019,10 @@ async def complete_onboarding(api_key: APIKey = Depends(verify_api_key), db: Ses
 
 @v1_router.get("/compliance/posture", response_model=CompliancePostureResponse, tags=["Compliance"])
 async def get_compliance_posture(api_key: APIKey = Depends(verify_api_key), db: Session = Depends(get_db)):
-    active_policies = db.query(Policy).filter(Policy.tenant_id == api_key.tenant_id, Policy.is_active.is_(True)).count()
+    active_policies = db.query(Policy).filter(Policy.tenant_id == api_key.tenant_id, Policy.is_active == True).count()
     return CompliancePostureResponse(
         frameworks_active=["SOC2", "GDPR"] if active_policies > 0 else ["Internal Baseline"],
-        last_audit_date=datetime.datetime.now(datetime.timezone.utc),
+        last_audit_date=datetime.datetime.utcnow(),
         event_retention_days=90,
         soc2_aligned=(active_policies >= 2)
     )
