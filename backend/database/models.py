@@ -56,12 +56,11 @@ class Incident(Base):
 class APIKey(Base):
     __tablename__ = "api_keys"
     id = Column(Integer, primary_key=True, index=True)
-    key_prefix = Column(String(16), index=True, nullable=True)
-    hashed_key = Column(String, nullable=False)
+    hashed_key = Column(String, unique=True, index=True, nullable=False)
     tenant_id = Column(Integer, ForeignKey("tenants.id"))
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=True)
     is_active = Column(Boolean, default=True)
-
+    
     tenant = relationship("Tenant", back_populates="api_keys")
     application = relationship("Application", back_populates="api_keys")
 
