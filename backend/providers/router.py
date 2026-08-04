@@ -51,10 +51,10 @@ class ProviderRouter:
             return self._error_response("Provider configuration error", 500)
         except ProviderAPIError as exc:
             logger.error("Provider API error: %s", exc)
-            return self._error_response(f"Provider error: {exc}", 500)
+            return self._error_response("Provider error occurred", 500)
         except SentinelProviderError as exc:
             logger.error("Provider error: %s", exc)
-            return self._error_response(f"Provider error: {exc}", 500)
+            return self._error_response("Provider error occurred", 500)
 
     def _get_provider_name(self, model: str) -> str:
         model = model.lower()

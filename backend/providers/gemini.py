@@ -1,5 +1,6 @@
 import time
 import logging
+import os
 
 from google import genai
 
@@ -11,7 +12,7 @@ logger = logging.getLogger("sentinel.providers.gemini")
 
 class GeminiProvider(BaseProvider):
     async def generate_completion(self, request, api_key: str):
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "mock-gemini-key"))
 
         gemini_messages = []
         for m in request.messages:

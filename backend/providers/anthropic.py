@@ -1,4 +1,5 @@
 import logging
+import os
 
 from anthropic import AsyncAnthropic, NotGiven
 
@@ -10,7 +11,7 @@ logger = logging.getLogger("sentinel.providers.anthropic")
 
 class AnthropicProvider(BaseProvider):
     async def generate_completion(self, request, api_key: str):
-        client = AsyncAnthropic(api_key=api_key)
+        client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "mock-anthropic-key"))
 
         system_messages = [m.content for m in request.messages if m.role == "system"]
         anthropic_messages = [
@@ -19,7 +20,7 @@ class AnthropicProvider(BaseProvider):
             if m.role != "system"
         ]
 
-        system_prompt = system_messages[0] if system_messages else NotGiven()
+        system_prompt = system_messages[0] if system_messages else None
 
         kwargs = {
             "model": request.model,
@@ -27,7 +28,7 @@ class AnthropicProvider(BaseProvider):
             "messages": anthropic_messages,
         }
 
-        if system_prompt is not NotGiven():
+        if system_prompt is not None:
             kwargs["system"] = system_prompt
         if request.temperature is not None:
             kwargs["temperature"] = request.temperature

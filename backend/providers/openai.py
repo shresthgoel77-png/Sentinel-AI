@@ -1,4 +1,5 @@
 import logging
+import os
 
 from openai import AsyncOpenAI
 
@@ -10,7 +11,7 @@ logger = logging.getLogger("sentinel.providers.openai")
 
 class OpenAIProvider(BaseProvider):
     async def generate_completion(self, request, api_key: str):
-        client = AsyncOpenAI(api_key=api_key)
+        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "mock-openai-key"))
 
         # Pydantic v2 dump
         kwargs = request.model_dump(exclude_none=True)
