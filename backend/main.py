@@ -10,11 +10,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-<<<<<<< HEAD
 from database.database import SessionLocal, engine
 from database.models import APIKey, AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
 from providers import ProviderRouter
-=======
 from database.database import SessionLocal
 from database.models import APIKey
 from providers.openai import OpenAIProvider
@@ -25,7 +23,6 @@ import json
 import secrets
 import datetime
 from database.models import AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
->>>>>>> upstream/main
 from sanitizer import DocumentSanitizer, EgressSanitizer
 from graph import app_graph
 from policy_engine import get_tenant_policy, evaluate_policies

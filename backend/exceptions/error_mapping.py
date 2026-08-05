@@ -212,13 +212,7 @@ def map_genai_error(exc: BaseException) -> None:
 
 
 def map_provider_error(exc: BaseException) -> None:
-    """Dispatch a native provider exception to the correct mapper.
-
-    This is the single entry point used by provider implementations.  It
-    tries each known SDK mapper in turn; if none match, the original
-    exception is re-raised unchanged.
-    """
     map_openai_error(exc)
     map_anthropic_error(exc)
     map_genai_error(exc)
-    raise exc
+    raise exc.with_traceback(exc.__traceback__)
