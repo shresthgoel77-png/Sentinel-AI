@@ -10,9 +10,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from database.database import SessionLocal
-from database.models import APIKey
-from providers.openai import OpenAIProvider
+from database.database import SessionLocal, engine
+from database.models import APIKey, AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
+from providers import ProviderRouter
+
 from providers.anthropic import AnthropicProvider
 import time
 import re
