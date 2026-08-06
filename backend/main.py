@@ -13,9 +13,7 @@ from sqlalchemy.orm import Session
 from database.database import SessionLocal, engine
 from database.models import APIKey, AuditLog, GatewayLog, ActionTaken, Application, Incident, Policy, PolicyRule, AlertChannel, TeamMember
 from providers import ProviderRouter
-from database.database import SessionLocal
-from database.models import APIKey
-from providers.openai import OpenAIProvider
+
 from providers.anthropic import AnthropicProvider
 import time
 import re
