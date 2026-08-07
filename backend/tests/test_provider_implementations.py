@@ -353,38 +353,46 @@ class TestAnthropicProvider:
 
 class TestProviderRouter:
     @pytest.mark.asyncio
-    async def test_timeout_returns_408(self):
-        """asyncio.TimeoutError in the router returns a 408 error response."""
+    async def test_timeout_falls_back(self):
+        """asyncio.TimeoutError in the router triggers a fallback to the next provider."""
         router = ProviderRouter()
         request = MagicMock()
         request.model = "gpt-4"
 
         with patch.object(
             router.providers["openai"], "generate_completion", new_callable=AsyncMock
-        ) as mock_gen:
-            mock_gen.side_effect = asyncio.TimeoutError()
+        ) as mock_openai, patch.object(
+            router.providers["gemini"], "generate_completion", new_callable=AsyncMock
+        ) as mock_gemini:
+            mock_openai.side_effect = asyncio.TimeoutError()
+            mock_gemini.return_value = {"id": "gemini-1"}
 
             result = await router.route(request, "test-key")
 
-        assert result["error"]["code"] == 408
-        assert "timed out" in result["error"]["message"].lower()
+        mock_openai.assert_awaited_once()
+        mock_gemini.assert_awaited_once()
+        assert result["id"] == "gemini-1"
 
     @pytest.mark.asyncio
-    async def test_rate_limit_returns_429(self):
-        """ProviderRateLimitError in the router returns a 429 error response."""
+    async def test_rate_limit_falls_back(self):
+        """ProviderRateLimitError in the router triggers a fallback to the next provider."""
         router = ProviderRouter()
         request = MagicMock()
         request.model = "gpt-4"
 
         with patch.object(
             router.providers["openai"], "generate_completion", new_callable=AsyncMock
-        ) as mock_gen:
-            mock_gen.side_effect = ProviderRateLimitError("rate limited")
+        ) as mock_openai, patch.object(
+            router.providers["gemini"], "generate_completion", new_callable=AsyncMock
+        ) as mock_gemini:
+            mock_openai.side_effect = ProviderRateLimitError("rate limited")
+            mock_gemini.return_value = {"id": "gemini-1"}
 
             result = await router.route(request, "test-key")
 
-        assert result["error"]["code"] == 429
-        assert "rate limit" in result["error"]["message"].lower()
+        mock_openai.assert_awaited_once()
+        mock_gemini.assert_awaited_once()
+        assert result["id"] == "gemini-1"
 
     @pytest.mark.asyncio
     async def test_authentication_returns_401(self):
@@ -404,38 +412,46 @@ class TestProviderRouter:
         assert "authentication" in result["error"]["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_provider_timeout_returns_408(self):
-        """ProviderTimeoutError in the router returns a 408 error response."""
+    async def test_provider_timeout_falls_back(self):
+        """ProviderTimeoutError in the router triggers a fallback to the next provider."""
         router = ProviderRouter()
         request = MagicMock()
         request.model = "gpt-4"
 
         with patch.object(
             router.providers["openai"], "generate_completion", new_callable=AsyncMock
-        ) as mock_gen:
-            mock_gen.side_effect = ProviderTimeoutError("timed out")
+        ) as mock_openai, patch.object(
+            router.providers["gemini"], "generate_completion", new_callable=AsyncMock
+        ) as mock_gemini:
+            mock_openai.side_effect = ProviderTimeoutError("timed out")
+            mock_gemini.return_value = {"id": "gemini-1"}
 
             result = await router.route(request, "test-key")
 
-        assert result["error"]["code"] == 408
-        assert "timed out" in result["error"]["message"].lower()
+        mock_openai.assert_awaited_once()
+        mock_gemini.assert_awaited_once()
+        assert result["id"] == "gemini-1"
 
     @pytest.mark.asyncio
-    async def test_api_error_returns_500(self):
-        """ProviderAPIError in the router returns a 500 error response."""
+    async def test_api_error_falls_back(self):
+        """ProviderAPIError in the router triggers a fallback to the next provider."""
         router = ProviderRouter()
         request = MagicMock()
         request.model = "gpt-4"
 
         with patch.object(
             router.providers["openai"], "generate_completion", new_callable=AsyncMock
-        ) as mock_gen:
-            mock_gen.side_effect = ProviderAPIError("server error")
+        ) as mock_openai, patch.object(
+            router.providers["gemini"], "generate_completion", new_callable=AsyncMock
+        ) as mock_gemini:
+            mock_openai.side_effect = ProviderAPIError("server error")
+            mock_gemini.return_value = {"id": "gemini-1"}
 
             result = await router.route(request, "test-key")
 
-        assert result["error"]["code"] == 500
-        assert "provider error" in result["error"]["message"].lower()
+        mock_openai.assert_awaited_once()
+        mock_gemini.assert_awaited_once()
+        assert result["id"] == "gemini-1"
 
     @pytest.mark.asyncio
     async def test_configuration_error_returns_500(self):
