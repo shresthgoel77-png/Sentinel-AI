@@ -1,16 +1,19 @@
 import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from exceptions.provider_exceptions import (
     ProviderAPIError,
     ProviderAuthenticationError,
+    ProviderCircuitOpenError,
     ProviderConfigurationError,
     ProviderRateLimitError,
     ProviderTimeoutError,
     SentinelProviderError,
 )
 from .anthropic import AnthropicProvider
+from .circuit_breaker import ProviderCircuitBreaker
 from .gemini import GeminiProvider
 from .openai import OpenAIProvider
 
@@ -56,6 +59,14 @@ class ProviderRouter:
             "anthropic": AnthropicProvider(),
             "gemini": GeminiProvider(),
         }
+        self.circuit_breaker = ProviderCircuitBreaker(
+            failure_threshold=int(
+                os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
+            ),
+            recovery_timeout=float(
+                os.getenv("CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "60.0")
+            ),
+        )
 
     async def route(self, request, api_key: str) -> Dict[str, Any]:
         provider_name = self._get_provider_name(request.model)
@@ -64,10 +75,31 @@ class ProviderRouter:
         last_error: Optional[BaseException] = None
         for index, candidate in enumerate(ordered_providers):
             provider = self.providers[candidate]
+
+            # Circuit breaker: skip providers with open circuits.
+            if not await self.circuit_breaker.allow_request(candidate):
+                logger.info(
+                    "Provider %s request skipped because circuit is open",
+                    candidate,
+                )
+                next_provider = self._next_provider(ordered_providers, index)
+                self._log_fallback(
+                    original_provider=provider_name,
+                    reason=ProviderCircuitOpenError(
+                        f"Provider {candidate} circuit is open"
+                    ),
+                    new_provider=next_provider,
+                    attempt=index + 1,
+                )
+                continue
+
             try:
-                return await self._try_provider(provider, request, api_key)
+                result = await self._try_provider(provider, request, api_key)
+                await self.circuit_breaker.record_success(candidate)
+                return result
             except _RECOVERABLE_EXCEPTIONS as exc:
                 last_error = exc
+                await self.circuit_breaker.record_failure(candidate)
                 next_provider = self._next_provider(ordered_providers, index)
                 self._log_fallback(
                     original_provider=provider_name,

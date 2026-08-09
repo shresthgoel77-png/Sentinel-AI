@@ -31,3 +31,7 @@ class ProviderAPIError(SentinelProviderError):
 
 class ProviderConfigurationError(SentinelProviderError):
     """Raised when a provider is misconfigured (missing/invalid settings)."""
+
+
+class ProviderCircuitOpenError(SentinelProviderError):
+    """Raised when a request is rejected because the provider circuit is open."""
