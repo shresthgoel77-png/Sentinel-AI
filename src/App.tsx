@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import DashboardLayout from './components/layout/DashboardLayout';
 import OverviewPage from './pages/OverviewPage';
 import ComingSoonPage from './pages/ComingSoonPage';
@@ -12,11 +13,11 @@ import TrafficPage from './pages/TrafficPage';
 import SettingsPage from './pages/SettingsPage';
 import TeamPage from './pages/TeamPage';
 import LandingPage from './pages/LandingPage';
-import { ToastProvider } from './components/ui/Toast';
 
 export default function App() {
   return (
-    <ToastProvider>
+    <>
+      <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
@@ -35,6 +36,6 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
-    </ToastProvider>
+    </>
   );
 }
