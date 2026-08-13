@@ -566,3 +566,16 @@ class TestProviderRouter:
 
         mock_gemini.assert_awaited_once()
         assert result["id"] == "gemini-1"
+
+
+@pytest.fixture(autouse=True)
+def _disable_retry_for_provider_router_tests(monkeypatch):
+    """Autouse, scoped to this module's provider/router fallback tests.
+
+    Issue #22 adds per-provider retry-with-backoff *before* a provider is
+    abandoned for fallback.  Setting max attempts to 1 here (one attempt, no
+    retries, no backoff sleeps) keeps these single-attempt fallback tests fast
+    and focused on the behaviour they were written to verify.  Retry behaviour
+    is covered separately by ``tests/test_provider_retry.py``.
+    """
+    monkeypatch.setenv("PROVIDER_RETRY_MAX_ATTEMPTS", "1")

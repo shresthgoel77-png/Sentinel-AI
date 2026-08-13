@@ -271,3 +271,16 @@ class TestConcurrency:
 
         await asyncio.gather(*[attempt() for _ in range(20)])
         assert sum(probe_attempts) == 1
+
+
+@pytest.fixture(autouse=True)
+def _disable_retry_for_circuit_breaker_tests(monkeypatch):
+    """Autouse, scoped to this module (Issue #22 compatibility).
+
+    Issue #22 adds per-provider retry-with-backoff inside the router.  The
+    circuit-breaker router tests exercise fallback/circuit behaviour and are
+    written against single attempted providers; disabling retry here keeps them
+    fast (no real backoff sleeps) and focused.  Retry behaviour is covered by
+    ``tests/test_provider_retry.py``.
+    """
+    monkeypatch.setenv("PROVIDER_RETRY_MAX_ATTEMPTS", "1")
