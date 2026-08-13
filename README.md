@@ -126,6 +126,11 @@ REDIS_URL=redis://localhost:6379
 OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_anthropic_key
 JWT_SECRET_KEY=generate_a_secure_random_key_here
+
+# Provider request retries (optional, exponential backoff).  Defaults shown.
+PROVIDER_RETRY_MAX_ATTEMPTS=3
+PROVIDER_RETRY_INITIAL_BACKOFF=1.0
+PROVIDER_RETRY_MAX_BACKOFF=30.0
 ```
 
 ### Frontend (`/.env`):

@@ -4,7 +4,6 @@ import os
 from typing import Any, Dict, List, Optional
 
 from exceptions.provider_exceptions import (
-    ProviderAPIError,
     ProviderAuthenticationError,
     ProviderCircuitOpenError,
     ProviderConfigurationError,
@@ -16,6 +15,7 @@ from .anthropic import AnthropicProvider
 from .circuit_breaker import ProviderCircuitBreaker
 from .gemini import GeminiProvider
 from .openai import OpenAIProvider
+from .retry import RETRYABLE_EXCEPTIONS, retry_with_exponential_backoff
 
 logger = logging.getLogger("sentinel.providers.router")
 
@@ -24,12 +24,7 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 
 # Exceptions that are considered recoverable and therefore trigger a fallback.
 # Authentication and configuration failures are intentionally excluded.
-_RECOVERABLE_EXCEPTIONS = (
-    ProviderTimeoutError,
-    ProviderRateLimitError,
-    ProviderAPIError,
-    asyncio.TimeoutError,
-)
+_RECOVERABLE_EXCEPTIONS = RETRYABLE_EXCEPTIONS
 
 
 class ProviderRouter:
@@ -68,6 +63,18 @@ class ProviderRouter:
             ),
         )
 
+        # Retry configuration (Issue #22): exponential backoff between
+        # attempts, applied before any provider fallback.
+        self.retry_max_attempts = int(
+            os.getenv("PROVIDER_RETRY_MAX_ATTEMPTS", "3")
+        )
+        self.retry_initial_backoff = float(
+            os.getenv("PROVIDER_RETRY_INITIAL_BACKOFF", "1.0")
+        )
+        self.retry_max_backoff = float(
+            os.getenv("PROVIDER_RETRY_MAX_BACKOFF", "30.0")
+        )
+
     async def route(self, request, api_key: str) -> Dict[str, Any]:
         provider_name = self._get_provider_name(request.model)
         ordered_providers = self._fallback_order(provider_name)
@@ -94,7 +101,12 @@ class ProviderRouter:
                 continue
 
             try:
-                result = await self._try_provider(provider, request, api_key)
+                result = await self._try_provider(
+                    candidate,
+                    provider,
+                    request,
+                    api_key,
+                )
                 await self.circuit_breaker.record_success(candidate)
                 return result
             except _RECOVERABLE_EXCEPTIONS as exc:
@@ -138,15 +150,35 @@ class ProviderRouter:
             "All providers failed", self._error_code(last_error)
         )
 
-    async def _try_provider(self, provider, request, api_key: str) -> Dict[str, Any]:
-        """Invoke a single provider with the shared timeout and error mapping.
+    async def _try_provider(
+        self,
+        provider_name: str,
+        provider,
+        request,
+        api_key: str,
+    ) -> Dict[str, Any]:
+        """Invoke a single provider with the shared timeout and retry behavior.
 
-        Raises the mapped Sentinel exception (or ``asyncio.TimeoutError``) on
-        failure so the caller can decide whether to fall back.
+        The provider call is wrapped in an ``asyncio.wait_for`` timeout and
+        retried with exponential backoff on transient failures (timeout, rate
+        limit, HTTP 5xx).  Non-retryable failures (authentication,
+        configuration, other application errors) propagate immediately.  When
+        retries are exhausted the final exception is re-raised so the caller
+        (fallback loop / circuit breaker) can react.
         """
-        return await asyncio.wait_for(
-            provider.generate_completion(request, api_key),
-            timeout=REQUEST_TIMEOUT_SECONDS,
+
+        async def _attempt() -> Dict[str, Any]:
+            return await asyncio.wait_for(
+                provider.generate_completion(request, api_key),
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+
+        return await retry_with_exponential_backoff(
+            _attempt,
+            provider_name=provider_name,
+            max_attempts=self.retry_max_attempts,
+            initial_backoff=self.retry_initial_backoff,
+            max_backoff=self.retry_max_backoff,
         )
 
     def _fallback_order(self, provider_name: str) -> List[str]:
