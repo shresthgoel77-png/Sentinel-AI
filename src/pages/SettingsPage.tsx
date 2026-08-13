@@ -1,22 +1,27 @@
 import { useState } from 'react';
-import { Settings2, Bell, Hash, TestTube } from 'lucide-react';
+import { Settings2, Bell, Hash } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function SettingsPage() {
     const [webhook, setWebhook] = useState("");
     const [isActive, setIsActive] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [statusText, setStatusText] = useState("");
 
     const handleSave = () => {
         setSaving(true);
-        setStatusText("Saving configuration...");
+        const toastId = toast.loading("Saving configuration...");
         fetch('http://localhost:8000/api/alerts/configure', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer sk_sentinel_demo_key', 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: "slack", webhook_url: webhook, is_active: isActive, events: ["incident.critical", "incident.high"] })
-        }).then(() => {
-            setStatusText("Webhook fully integrated.");
-            setTimeout(() => setStatusText(""), 3000);
+        }).then((res) => {
+            if (res.ok) {
+                toast.success("Webhook configuration saved successfully.", { id: toastId });
+            } else {
+                toast.error("Failed to save configuration.", { id: toastId });
+            }
+        }).catch(() => {
+            toast.error("Failed to save configuration.", { id: toastId });
         }).finally(() => setSaving(false));
     }
 
@@ -50,15 +55,10 @@ export default function SettingsPage() {
                     </div>
                 </div>
                 <div className="px-6 py-4 border-t border-[#2D333B] bg-[#22272E] flex justify-between items-center">
-                    <span className="text-sm text-emerald-400 font-medium">{statusText}</span>
-                    <div className="flex gap-3">
-                        <button className="bg-[#2D333B] hover:bg-[#3D444D] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-                            <TestTube className="w-4 h-4" /> Test Ping
-                        </button>
-                        <button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
-                            {saving ? "Saving..." : "Save Configuration"}
-                        </button>
-                    </div>
+                    <div></div>
+                    <button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                        {saving ? "Saving..." : "Save Configuration"}
+                    </button>
                 </div>
             </div>
         </div>
