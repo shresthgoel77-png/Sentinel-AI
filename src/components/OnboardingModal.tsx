@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Shield, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+
+// Turns a fetch Response's status into a readable message, calling out auth/server failures explicitly.
+const messageForStatus = (status: number, fallback: string) => {
+    if (status === 401) return "Your session has expired. Please log in again.";
+    if (status >= 500) return "Server error. Please try again in a moment.";
+    return fallback;
+}
 
 export default function OnboardingModal() {
     const [open, setOpen] = useState(false);
@@ -10,20 +18,28 @@ export default function OnboardingModal() {
     useEffect(() => {
         fetch('http://localhost:8000/api/me/onboarding', {
             headers: { 'Authorization': 'Bearer sk_sentinel_demo_key' }
-        }).then(res => res.json()).then(data => {
+        }).then(res => {
+            if (!res.ok) throw new Error(messageForStatus(res.status, "Failed to load onboarding status."));
+            return res.json();
+        }).then(data => {
             if (!data.onboarding_completed) {
                 setOpen(true);
             }
-        }).catch(() => { });
+        }).catch((err) => {
+            toast.error(err instanceof Error ? err.message : "Unable to verify onboarding status.");
+        });
     }, []);
 
     const finishOnboarding = () => {
         fetch('http://localhost:8000/api/me/onboarding', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer sk_sentinel_demo_key' }
-        }).then(() => {
+        }).then((res) => {
+            if (!res.ok) throw new Error(messageForStatus(res.status, "Failed to complete onboarding setup."));
             setOpen(false);
             navigate('/dashboard/overview');
+        }).catch((err) => {
+            toast.error(err instanceof Error ? err.message : "Failed to complete onboarding setup.");
         });
     }
 

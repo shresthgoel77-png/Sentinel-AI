@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Shield, ShieldAlert, Activity, ShieldCheck, Plus, TerminalSquare, Play } from 'lucide-react';
+import toast from 'react-hot-toast';
 import api from '../api';
 import Skeleton from '../components/ui/Skeleton';
+
+// Maps an axios/fetch error to a readable message, calling out auth/server failures explicitly.
+const getErrorMessage = (e: any, fallback: string) => {
+    const status = e?.response?.status;
+    if (status === 401) return "Your session has expired. Please log in again.";
+    if (status && status >= 500) return "Server error. Please try again in a moment.";
+    if (e?.request && !e?.response) return "Network error. Check your connection and try again.";
+    return fallback;
+}
 
 export default function PoliciesPage() {
     const [policies, setPolicies] = useState<any[]>([]);
@@ -21,6 +31,7 @@ export default function PoliciesPage() {
             if (Array.isArray(data)) setPolicies(data);
         } catch (e) {
             console.error("Failed to fetch policies:", e);
+            toast.error(getErrorMessage(e, "Failed to load policies."));
         } finally {
             setIsLoading(false);
         }
@@ -32,6 +43,7 @@ export default function PoliciesPage() {
             await fetchPolicies();
         } catch (e) {
             console.error("Failed to toggle policy:", e);
+            toast.error(getErrorMessage(e, "Failed to update policy status."));
         }
     }
 
@@ -44,6 +56,7 @@ export default function PoliciesPage() {
             setTestResult(data);
         } catch (e) {
             console.error("Failed to execute test:", e);
+            toast.error(getErrorMessage(e, "Failed to run scenario simulation."));
         } finally {
             setTesting(false);
         }
