@@ -1,4 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { Search } from 'lucide-react';
 import Sidebar from './Sidebar';
 import OnboardingModal from '../OnboardingModal';
@@ -6,6 +7,7 @@ import DarkVeil from '../DarkVeil';
 
 export default function DashboardLayout() {
     const location = useLocation();
+    const [searchQuery, setSearchQuery] = useState('');
     const titleMap: any = {
         '/overview': 'Global Analytics Engine',
         '/policies': 'Policy Studio Management',
@@ -22,19 +24,28 @@ export default function DashboardLayout() {
             <Sidebar />
             <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
                 {/* Global Search Header */}
-                <header className="h-16 flex-shrink-0 border-b border-[#2D333B] bg-[#161B22]/80 backdrop-blur-md flex justify-between items-center px-8 z-20">
+                <header className="h-16 flex-shrink-0 border-b border-[#2D333B] bg-[#161B22]/80 backdrop-blur-md flex justify-between items-center px-8 z-20 relative">
                     <div className="text-gray-400 font-medium">
                         Sentinel Platform / <span className="text-white">{titleMap[location.pathname] || 'Dashboard'}</span>
                     </div>
-                    <div className="relative">
+                    <form 
+                        className="relative"
+                        onSubmit={(e) => e.preventDefault()}
+                    >
                         <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input type="text" placeholder="Search incidents, apps, policies (CMD+K)" className="bg-[#0E1116] border border-[#2D333B] text-sm text-gray-300 rounded-full pl-10 pr-4 py-1.5 w-[300px] outline-none focus:border-blue-500 transition-colors shadow-inner" />
-                    </div>
+                        <input 
+                            type="text" 
+                            placeholder="Search incidents, apps, policies (CMD+K)" 
+                            className="bg-[#0E1116] border border-[#2D333B] text-sm text-gray-300 rounded-full pl-10 pr-4 py-1.5 w-[300px] outline-none focus:border-blue-500 transition-colors shadow-inner" 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </form>
                 </header>
 
                 {/* Main Content Area */}
                 <main className="flex-1 overflow-y-auto p-8 relative z-10 custom-scrollbar pb-24">
-                    <Outlet />
+                    <Outlet context={{ searchQuery }} />
                 </main>
 
                 {/* Ambient Glows */}
