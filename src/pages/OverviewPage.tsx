@@ -1,12 +1,13 @@
 import { ShieldAlert, ShieldCheck, Activity, AppWindow, ArrowRight } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import api from '../api';
 import Skeleton from '../components/ui/Skeleton';
 
 export default function OverviewPage() {
     const navigate = useNavigate();
+    const { searchQuery } = useOutletContext<{ searchQuery?: string }>();
     const [isLoading, setIsLoading] = useState(true);
     const [liveTraffic, setLiveTraffic] = useState<any[]>([]);
     const [analytics, setAnalytics] = useState<any>({
@@ -177,7 +178,14 @@ export default function OverviewPage() {
                                 <tr>
                                     <td colSpan={4} className="p-4"><Skeleton className="h-[40px] w-full" /></td>
                                 </tr>
-                            ) : liveTraffic.map((log) => (
+                            ) : liveTraffic
+                                .filter(log => !searchQuery || 
+                                    log.provider_used?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                    log.model_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    log.action_taken?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    (log.risk_score && log.risk_score.toString().includes(searchQuery))
+                                )
+                                .map((log) => (
                                 <tr key={log.id} onClick={() => log.action_taken === 'BLOCKED' && navigate('/dashboard/incidents')} className="hover:bg-[#2D333B]/40 transition-colors cursor-pointer group">
                                     <td className="p-4 text-sm font-mono text-gray-400 group-hover:text-blue-400 transition-colors">{new Date(log.time_stamp).toLocaleTimeString([], { hour12: false })}</td>
                                     <td className="p-4 text-sm font-mono text-gray-300">{log.provider_used} // {log.model_name}</td>
